@@ -33,68 +33,37 @@ let state = null;
 let studentConnections = {};
 let currentSubmissions = {};
 let submissionUnsub = null;
-let submissionKey = null;  // tracks which regime_round the listener is bound to
+let submissionKey = null;
 let currentProposals = {};
 let proposalUnsub = null;
 let proposalRegime = null;
 let cleantechUnsub = null;
 let cleantechKey = null;
-/** Latest `cleantech/{regime}` map per regime (RTDB is source of truth during the claim window). */
-const cleantechClaimsByRegime = {};
-let cleantechRefreshSeq = 0;
 
 /**
- * Merge cached cleantech claims into `state.regimeData[regimeKey]` when that regime is on screen.
- * Re-applies after every `onStateChange` so a stale `state` snapshot cannot erase
- * flags that were set from `cleantech/` before `sync()` finished (overlapping writes).
- * @returns {boolean} whether any firm’s `cleanTech` changed
+ * RTDB `cleantech/{regime}` snapshots, keyed by regime.
+ * This is the source of truth for student self-claims.
+ * We NEVER merge this into `state` or call sync() from the listener,
+ * because that creates a race: sync() → onStateChange → rebuild state → wipe merge.
+ * Instead we overlay at render time via firmHasCleanTech / countCleanTechSlots.
  */
-function applyCleantechFromCacheForRegime(regimeKey) {
-  if (!state || state.regime !== regimeKey) return false;
-  const claims = cleantechClaimsByRegime[regimeKey];
-  if (claims == null || typeof claims !== 'object' || Array.isArray(claims)) return false;
-  const rd = state.regimeData[regimeKey];
-  if (!regimeUsesCleanTech(regimeKey) || !rd || rd.currentRound !== 0 || rd.rounds.length > 0) return false;
-  let changed = false;
+const cleantechClaimsByRegime = {};
+
+/** Does firm `i` have clean tech in `regime`? (union of state + RTDB claims cache) */
+function firmHasCleanTech(regime, i) {
+  const rd = state && state.regimeData[regime];
+  if (rd && rd.firms[i] && rd.firms[i].cleanTech) return true;
+  const c = cleantechClaimsByRegime[regime];
+  return !!(c && c[String(i)]);
+}
+
+/** How many firms have clean tech (union of state + RTDB cache). */
+function countCleanTechSlots(regime) {
+  if (!state) return 0;
   const n = state.config.numFirms;
-  for (let i = 0; i < n; i++) {
-    const fi = rd.firms[i];
-    if (!fi) continue;
-    const v = !!claims[String(i)];
-    if (fi.cleanTech !== v) {
-      fi.cleanTech = v;
-      changed = true;
-    }
-  }
-  return changed;
-}
-
-function applyCleantechFromCacheForCurrentRegime() {
-  if (!state) return false;
-  return applyCleantechFromCacheForRegime(state.regime);
-}
-
-/** Pull `cleantech/{regime}` from RTDB into the cache and merge (covers claims while listener was unsubscribed). */
-async function refreshCleantechFromServer() {
-  if (!state) return;
-  const r = state.regime;
-  if (!REGIMES.includes(r) || !regimeUsesCleanTech(r)) return;
-  const rd = state.regimeData[r];
-  if (!rd || rd.currentRound !== 0 || rd.rounds.length > 0) return;
-  const seq = ++cleantechRefreshSeq;
-  try {
-    const claims = await fetchCleantechClaims(ROOM, r);
-    if (seq !== cleantechRefreshSeq) return;
-    cleantechClaimsByRegime[r] = claims;
-    if (!state || state.regime !== r) return;
-    if (applyCleantechFromCacheForRegime(r)) {
-      await sync();
-    }
-    if (!state || state.regime !== r) return;
-    render();
-  } catch (e) {
-    console.error('[HOST] refreshCleantechFromServer', e);
-  }
+  let count = 0;
+  for (let i = 0; i < n; i++) if (firmHasCleanTech(regime, i)) count++;
+  return count;
 }
 
 const content = document.getElementById('content');
@@ -138,10 +107,6 @@ export async function init() {
         if (rd && rd.debriefActive) listenForProposals(state.regime);
       }
       listenForCleanTechClaims();
-      if (applyCleantechFromCacheForCurrentRegime()) {
-        sync().catch(e => console.error('[HOST] sync after re-applying cleantech cache', e));
-      }
-      void refreshCleantechFromServer();
       render();
     } catch (err) {
       console.error(err);
@@ -227,7 +192,6 @@ window.hostApp = {
     sync();
   },
 
-  /** Jump to setup, any regulatory regime, or results (same as choosing a tab once it is unlocked). */
   jumpToRegime(regime) {
     if (!state) return;
     if (regime !== 'setup' && regime !== 'results' && !REGIMES.includes(regime)) return;
@@ -250,6 +214,9 @@ window.hostApp = {
 
   async setCleanTech(regime, i, val) {
     state.regimeData[regime].firms[i].cleanTech = val;
+    cleantechClaimsByRegime[regime] = cleantechClaimsByRegime[regime] || {};
+    if (val) cleantechClaimsByRegime[regime][String(i)] = true;
+    else delete cleantechClaimsByRegime[regime][String(i)];
     try {
       await mirrorCleanTechClaim(ROOM, regime, i, val);
     } catch (e) {
@@ -264,6 +231,8 @@ window.hostApp = {
   },
 
   async submitRound(regime) {
+    const d = state.regimeData[regime];
+    bakeCleanTechIntoState(regime);
     const production = [];
     for (let i = 0; i < state.config.numFirms; i++) {
       const el = document.getElementById(`prod-${regime}-${i}`);
@@ -271,9 +240,9 @@ window.hostApp = {
       let val = el ? parseInt(el.value) || 0 : (fromSubmission ? fromSubmission.quantity : 0);
       production.push(val);
     }
-    const prevRound = state.regimeData[regime].currentRound;
+    const prevRound = d.currentRound;
     processRound(state, regime, production);
-    const newRound = state.regimeData[regime].currentRound;
+    const newRound = d.currentRound;
     console.log(`[HOST] submitRound: processed ${regime} round ${prevRound} → now ${newRound}`);
     await clearSubmissions(ROOM, regime, prevRound);
     console.log(`[HOST] submitRound: cleared submissions for ${regime}_${prevRound}`);
@@ -290,6 +259,7 @@ window.hostApp = {
   },
 
   completeAndAdvance(regime, next) {
+    bakeCleanTechIntoState(regime);
     state.regimeData[regime].debriefActive = false;
     if (proposalUnsub) { proposalUnsub(); proposalUnsub = null; proposalRegime = null; }
     currentProposals = {};
@@ -329,6 +299,22 @@ window.hostApp = {
   },
 };
 
+/**
+ * Copy RTDB cleantech claims into state.regimeData[regime].firms[].cleanTech
+ * so the game engine (processRound, etc.) sees the correct flags.
+ * Called just before submitRound / completeAndAdvance — the only times
+ * the engine actually needs cleanTech in state.
+ */
+function bakeCleanTechIntoState(regime) {
+  if (!state) return;
+  const rd = state.regimeData[regime];
+  if (!rd) return;
+  const n = state.config.numFirms;
+  for (let i = 0; i < n; i++) {
+    rd.firms[i].cleanTech = firmHasCleanTech(regime, i);
+  }
+}
+
 /* ── Submission listener ── */
 
 function listenForSubmissions() {
@@ -357,7 +343,7 @@ function listenForSubmissions() {
   });
 }
 
-/* ── Proposal listener ── */
+/* ── Clean-tech claims listener ── */
 
 function listenForCleanTechClaims() {
   if (!state || !REGIMES.includes(state.regime)) {
@@ -375,14 +361,11 @@ function listenForCleanTechClaims() {
   cleantechKey = regime;
   cleantechUnsub = onCleanTechClaims(ROOM, regime, claims => {
     cleantechClaimsByRegime[regime] = claims && typeof claims === 'object' && !Array.isArray(claims) ? claims : {};
-    if (!state || state.regime !== regime || !state.regimeData[regime]) return;
-    const changed = applyCleantechFromCacheForRegime(regime);
-    if (changed) {
-      sync().catch(e => console.error('[HOST] sync after cleantech claims update', e));
-    }
     render();
   });
 }
+
+/* ── Proposal listener ── */
 
 function listenForProposals(regime) {
   if (proposalRegime === regime) return;
@@ -537,11 +520,11 @@ function renderRegime(regime) {
   return html;
 }
 
-/* ── Clean tech assignment ── */
+/* ── Clean tech assignment (uses overlay helpers) ── */
 
 function renderCleanTechAssignment(regime, d) {
   const maxSlots = state.config.maxCleanTech ?? 3;
-  const slotsUsed = d.firms.filter(f => f.cleanTech).length;
+  const slotsUsed = countCleanTechSlots(regime);
   return `
     <div class="card">
       <h3>Clean Technology Assignment</h3>
@@ -552,10 +535,10 @@ function renderCleanTechAssignment(regime, d) {
       </p>
       <div class="prod-grid">
         ${state.firms.map((f, i) => {
-          const fd = d.firms[i];
+          const hasCT = firmHasCleanTech(regime, i);
           return `<div class="prod-input-card">
             <div class="firm-name" style="color:${firmColor(i)}">${f.name}</div>
-            <label><input type="checkbox" ${fd.cleanTech ? 'checked' : ''}
+            <label><input type="checkbox" ${hasCT ? 'checked' : ''}
                    onchange="window.hostApp.setCleanTech('${regime}', ${i}, this.checked)"> Clean Tech</label>
           </div>`;
         }).join('')}
@@ -661,7 +644,7 @@ function renderPermitMarket(regime, d, config) {
     </div>`;
 }
 
-/* ── Production input ── */
+/* ── Production input (uses overlay helpers for tech badge) ── */
 
 function renderProductionInput(regime, d, config) {
   const isCaC = regimeHasCap(regime);
@@ -681,15 +664,17 @@ function renderProductionInput(regime, d, config) {
       <div class="prod-grid">
         ${state.firms.map((f, i) => {
           const fd = d.firms[i];
-          const maxAllowed = maxAllowedProduction(fd, config, regime);
+          const hasCT = usesClean && firmHasCleanTech(regime, i);
+          const fdEff = hasCT ? { ...fd, cleanTech: true } : fd;
+          const maxAllowed = maxAllowedProduction(fdEff, config, regime);
           const sub = currentSubmissions[i];
           const prefilledVal = sub ? sub.quantity : 0;
-          const techBadge = usesClean ? cleanBadge(fd) : '';
+          const techBadge = usesClean ? cleanBadge(fdEff) : '';
           let extraInfo = `Capital: ${fmtMoney(fd.capital)}`;
           if (isCaC) extraInfo += ` | Cap: ${fmt(config.cacCap)}`;
           if (isTrade) {
-            const pr = permitsRemaining(fd);
-            const upp = unitsPerPermit(fd);
+            const pr = permitsRemaining(fdEff);
+            const upp = unitsPerPermit(fdEff);
             extraInfo += ` | Permits: ${fmt(pr)} (=${fmt(pr * upp)} units)`;
           }
 

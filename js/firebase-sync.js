@@ -145,6 +145,8 @@ export async function mirrorCleanTechClaim(roomCode, regime, firmId, claimed) {
  */
 export async function claimCleanTech(roomCode, regime, firmId, maxSlots) {
   ensureInit();
+  /* Coerce so bad/missing RTDB config never makes `>= maxSlots` trivially true (e.g. 0). */
+  const cap = Math.max(1, Math.min(100, Number(maxSlots) || 3));
   const ref = roomRef(roomCode).child(`cleantech/${regime}`);
   return new Promise((resolve, reject) => {
     ref.transaction(
@@ -152,7 +154,7 @@ export async function claimCleanTech(roomCode, regime, firmId, maxSlots) {
         const c = normalizeCleantechClaims(current);
         const k = String(firmId);
         if (c[k]) return c;
-        if (Object.keys(c).length >= maxSlots) return undefined;
+        if (Object.keys(c).length >= cap) return undefined;
         return { ...c, [k]: true };
       },
       (error, committed) => {

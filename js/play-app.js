@@ -7,7 +7,9 @@ import {
   permitsRemaining, normalizeStateFromRemote, maxAffordable, maxProductionFromPermits,
   totalTaxPaidByFirm, roundProfitDetailForFirm, computeDeadweightLoss,
 } from './game-engine.js';
-import { onStateChange, submitDecision, registerStudent, submitProposal, claimCleanTech } from './firebase-sync.js';
+import {
+  onStateChange, submitDecision, registerStudent, submitProposal, claimCleanTech, onCleanTechClaims,
+} from './firebase-sync.js';
 import {
   fmt, fmtMoney, renderCO2Meter, firmColor, cleanBadge, regimeUsesCleanTech, regimeUsesTax,
   regimeUsesPermits, regimeHasCap, regimeHasPermitMarket, regimeDescription, debriefPrompt,
@@ -25,6 +27,56 @@ let state = null;
 let hasSubmitted = {};
 let submissionClampNotes = {};
 let hasProposed = {};
+
+/** RTDB `cleantech/{regime}` snapshot (students listen here; host also mirrors into `state`). */
+const cleantechRemoteByRegime = {};
+let cleantechStudentUnsub = null;
+let cleantechStudentKey = null;
+
+function getCleantechClaims(regime) {
+  return cleantechRemoteByRegime[regime] || {};
+}
+
+function firmCleanTechEffective(regime, fd) {
+  const c = getCleantechClaims(regime);
+  return !!(fd.cleanTech || c[String(FIRM_ID)]);
+}
+
+function slotsUsedWithClaims(d, regime) {
+  const c = getCleantechClaims(regime);
+  let u = 0;
+  for (let i = 0; i < d.firms.length; i++) {
+    if (d.firms[i].cleanTech || c[String(i)]) u++;
+  }
+  return u;
+}
+
+function syncCleanTechStudentListener() {
+  if (!state) {
+    if (cleantechStudentUnsub) {
+      cleantechStudentUnsub();
+      cleantechStudentUnsub = null;
+    }
+    cleantechStudentKey = null;
+    return;
+  }
+  const r = state.regime;
+  const d = state.regimeData[r];
+  const want = REGIMES.includes(r) && regimeUsesCleanTech(r) && d
+    && d.currentRound === 0 && d.rounds.length === 0;
+  const key = want ? r : null;
+  if (key === cleantechStudentKey && cleantechStudentUnsub) return;
+  if (cleantechStudentUnsub) {
+    cleantechStudentUnsub();
+    cleantechStudentUnsub = null;
+  }
+  cleantechStudentKey = key;
+  if (!want) return;
+  cleantechStudentUnsub = onCleanTechClaims(ROOM, r, claims => {
+    cleantechRemoteByRegime[r] = claims && typeof claims === 'object' ? claims : {};
+    render();
+  });
+}
 
 /** Simulated clean-tech for calculator only (not actual firm state). */
 let calcSimCleanTech = false;
@@ -58,7 +110,7 @@ function buildClampMessage(regime, fd, config, raw, applied) {
 function renderCleanTechClaimCard(regime, d, fd, config) {
   if (!regimeUsesCleanTech(regime) || d.currentRound !== 0 || d.rounds.length > 0) return '';
   const maxSlots = config.maxCleanTech ?? 3;
-  const slotsUsed = d.firms.filter(f => f.cleanTech).length;
+  const slotsUsed = slotsUsedWithClaims(d, regime);
   if (fd.cleanTech) {
     return `
       <div class="card" style="border-color:var(--success);">
@@ -101,12 +153,14 @@ async function init() {
   onStateChange(ROOM, newState => {
     state = normalizeStateFromRemote(newState);
     if (!state) {
+      syncCleanTechStudentListener();
       content.innerHTML = `<div class="card"><h2>Room not found</h2><p>No game state for this room. <a href="index.html">Return to join page</a></p></div>`;
       return;
     }
     state.config = buildConfig(state.config);
     const rd = state.regimeData[state.regime];
     console.log(`[STUDENT] onStateChange: regime=${state.regime}, currentRound=${rd ? rd.currentRound : 'N/A'}`);
+    syncCleanTechStudentListener();
     render();
   });
 }
@@ -142,6 +196,7 @@ function renderRegime(regime) {
   if (!d) return renderWaiting('Loading regime data…');
   const config = state.config;
   const fd = d.firms[FIRM_ID];
+  const fdEff = { ...fd, cleanTech: firmCleanTechEffective(regime, fd) };
   const firm = state.firms[FIRM_ID];
   const roundDone = d.currentRound >= config.numRounds;
   const usesClean = regimeUsesCleanTech(regime);
@@ -154,7 +209,7 @@ function renderRegime(regime) {
   html += `
     <div class="student-firm-header" style="border-color:${firmColor(FIRM_ID)};">
       <div class="firm-name-large" style="color:${firmColor(FIRM_ID)};">${firm.name}</div>
-      ${usesClean ? `<div>${cleanBadge(fd)}</div>` : ''}
+      ${usesClean ? `<div>${cleanBadge(fdEff)}</div>` : ''}
       <div class="firm-capital">${fmtMoney(fd.capital)}</div>
       <div style="font-size:0.82rem;color:var(--text-secondary);">Available capital</div>
     </div>
@@ -170,8 +225,8 @@ function renderRegime(regime) {
   html += renderCO2Meter(d.ppm, config);
 
   if (isTrade) {
-    const pr = permitsRemaining(fd);
-    const upp = unitsPerPermit(fd);
+    const pr = permitsRemaining(fdEff);
+    const upp = unitsPerPermit(fdEff);
     html += `
       <div class="card">
         <h3>Your Permits</h3>
@@ -183,15 +238,15 @@ function renderRegime(regime) {
   }
 
   if (!roundDone) {
-    ensureCalcSim(regime, fd, d.currentRound);
-    html += renderCleanTechClaimCard(regime, d, fd, config);
+    ensureCalcSim(regime, fdEff, d.currentRound);
+    html += renderCleanTechClaimCard(regime, d, fdEff, config);
   }
-  html += renderCalculator(regime, fd, config, d);
+  html += renderCalculator(regime, fdEff, config, d);
 
   if (!roundDone) {
     const roundKey = `${regime}_${d.currentRound}`;
     const alreadySubmitted = hasSubmitted[roundKey];
-    const maxAllowed = maxAllowedProduction(fd, config, regime);
+    const maxAllowed = maxAllowedProduction(fdEff, config, regime);
     const clampNote = submissionClampNotes[roundKey] || '';
 
     if (alreadySubmitted) {
@@ -612,7 +667,7 @@ window.playApp = {
     const regime = state.regime;
     const config = state.config;
     const fd = state.regimeData[regime].firms[FIRM_ID];
-    const actualClean = !!fd.cleanTech;
+    const actualClean = firmCleanTechEffective(regime, fd);
     const upp = actualClean ? 2000 : 1000;
     const setup = actualClean ? config.cleanTechCost : 0;
     const permitValue = (upp * config.profitPerUnit) - setup;
@@ -642,11 +697,15 @@ window.playApp = {
 
   async tryClaimCleanTech(regime) {
     if (!state) return;
-    const maxSlots = state.config.maxCleanTech ?? 3;
+    const maxSlots = Math.max(1, Math.min(100, Number(state.config.maxCleanTech) || 3));
     try {
       const { ok } = await claimCleanTech(ROOM, regime, FIRM_ID, maxSlots);
       if (!ok) {
         alert('All clean-tech slots are full. Another firm may have claimed just before you.');
+      } else {
+        const k = String(FIRM_ID);
+        cleantechRemoteByRegime[regime] = { ...getCleantechClaims(regime), [k]: true };
+        render();
       }
     } catch (e) {
       console.error('[STUDENT] claimCleanTech failed', e);
@@ -676,7 +735,8 @@ window.playApp = {
     const raw = Math.max(0, parseInt(input.value, 10) || 0);
     let qty = raw;
     if (qty > maxAllowed) qty = maxAllowed;
-    const fd = state.regimeData[regime].firms[FIRM_ID];
+    const rawFd = state.regimeData[regime].firms[FIRM_ID];
+    const fd = { ...rawFd, cleanTech: firmCleanTechEffective(regime, rawFd) };
     const roundKey = `${regime}_${round}`;
     const note = buildClampMessage(regime, fd, state.config, raw, qty);
     if (note) submissionClampNotes[roundKey] = note;

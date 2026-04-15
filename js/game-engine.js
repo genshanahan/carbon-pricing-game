@@ -6,21 +6,54 @@
 export const DEFAULTS = {
   numFirms: 5,
   numRounds: 5,
-  startCapital: 1000,
   costPerUnit: 1,
   revenuePerUnit: 2,
   ppmPer1000: 2,
   startPpm: 380,
   triggerPpm: 450,
   taxRate: 0.80,
-  cleanTechCost: 200,
-  /** Max firms that can have clean tech (student claims + facilitator assignments). */
-  maxCleanTech: 3,
   /** Subset of {@link OPTIONAL_REGIMES} in canonical order (free market is always first). */
   enabledRegimes: ['cac', 'tax', 'trade', 'trademarket'],
   /** When true, facilitator can inject extra permits mid-session in Cap & Trade. */
   offsetAuctionEnabled: false,
 };
+
+/**
+ * Derive session parameters that must stay calibrated to the pedagogical model.
+ *
+ * **startCapital** — Set so that unconstrained free-market production triggers
+ * catastrophe at roughly 60 % of the way through the regime (e.g. round 3 of 5).
+ *
+ * **cleanTechCost** — 45 % of startCapital: clean-tech firms reliably earn less
+ * than standard firms in rounds 1–2 of the Carbon Tax regime, prompting the
+ * fairness discussion, then overtake in round 3+.
+ *
+ * **maxCleanTech** — ~40 % of firms (at least 1): enough for heterogeneity
+ * without making clean tech the majority.
+ *
+ * **permitsPerFirm** — Derived so that permit-based production is strictly less
+ * than what firms could afford, ensuring permits are a binding constraint.
+ */
+export function deriveSessionParams(numFirms, numRounds, opts = {}) {
+  const ppmPer1000 = opts.ppmPer1000 ?? DEFAULTS.ppmPer1000;
+  const startPpm   = opts.startPpm   ?? DEFAULTS.startPpm;
+  const triggerPpm  = opts.triggerPpm  ?? DEFAULTS.triggerPpm;
+  const ppmBudget = triggerPpm - startPpm;
+
+  const targetRound = Math.ceil(numRounds * 0.6);
+  const exactC = (ppmBudget * 1000) /
+    (numFirms * (Math.pow(2, targetRound) - 1) * ppmPer1000);
+  const startCapital = Math.ceil(exactC / 50) * 50;
+
+  const cleanTechCost = Math.round(startCapital * 0.45);
+  const maxCleanTech = Math.max(1, Math.floor(numFirms * 0.4));
+
+  const maxThingamabobs = (ppmBudget / ppmPer1000) * 1000;
+  const permitsPerFirm = Math.max(1,
+    Math.floor(Math.floor(maxThingamabobs / 1000) / numFirms));
+
+  return { startCapital, cleanTechCost, maxCleanTech, permitsPerFirm };
+}
 
 /** Full canonical order (free market + optional chain). */
 export const REGIMES = ['freemarket', 'cac', 'tax', 'trade', 'trademarket'];
@@ -83,8 +116,13 @@ export function buildConfig(overrides = {}) {
   c.enabledRegimes = normaliseEnabledRegimes(c.enabledRegimes);
   c.numFirms = Math.max(3, Math.min(8, Math.round(Number(c.numFirms) || DEFAULTS.numFirms)));
   c.numRounds = Math.max(3, Math.min(7, Math.round(Number(c.numRounds) || DEFAULTS.numRounds)));
-  c.startCapital = Math.max(200, Math.min(5000, Math.round(Number(c.startCapital) || DEFAULTS.startCapital)));
   c.offsetAuctionEnabled = !!c.offsetAuctionEnabled;
+
+  const derived = deriveSessionParams(c.numFirms, c.numRounds, c);
+  c.startCapital  = derived.startCapital;
+  c.cleanTechCost = derived.cleanTechCost;
+  c.maxCleanTech  = derived.maxCleanTech;
+
   c.profitPerUnit = c.revenuePerUnit - c.costPerUnit;
   c.maxThingamabobs = (c.triggerPpm - c.startPpm) / c.ppmPer1000 * 1000;
   c.cacCap = Math.floor(c.maxThingamabobs / (c.numFirms * c.numRounds));
@@ -148,6 +186,16 @@ export function normalizeStateFromRemote(s) {
   if (!o.config || typeof o.config !== 'object') o.config = {};
   const mergedCfg = { ...DEFAULTS, ...o.config };
   if (!Array.isArray(mergedCfg.enabledRegimes)) mergedCfg.enabledRegimes = [...OPTIONAL_REGIMES];
+  if (typeof mergedCfg.startCapital !== 'number') {
+    const d = deriveSessionParams(
+      mergedCfg.numFirms ?? DEFAULTS.numFirms,
+      mergedCfg.numRounds ?? DEFAULTS.numRounds,
+      mergedCfg,
+    );
+    mergedCfg.startCapital  = d.startCapital;
+    mergedCfg.cleanTechCost = d.cleanTechCost;
+    mergedCfg.maxCleanTech  = d.maxCleanTech;
+  }
   for (const key of Object.keys(o.regimeData)) {
     o.regimeData[key] = normalizeRegimeDatum(o.regimeData[key], mergedCfg);
   }

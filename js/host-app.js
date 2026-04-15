@@ -9,7 +9,7 @@ import {
   maxAllowedProduction, maxAffordable, unitsPerPermit, permitsRemaining,
   maxProductionFromPermits, normalizeStateFromRemote, totalTaxPaidByFirm,
   regimeSequence, nextRegimeAfter, previousRegimeInSession, resizeFirmsList,
-  injectOffsetPermits, OPTIONAL_REGIMES,
+  injectOffsetPermits, OPTIONAL_REGIMES, deriveSessionParams,
 } from './game-engine.js';
 
 import {
@@ -399,7 +399,6 @@ window.hostApp = {
     if (!state || state.gameStarted) return;
     const numFirms = Math.max(3, Math.min(8, parseInt(document.getElementById('cfg-num-firms')?.value, 10) || 5));
     const numRounds = Math.max(3, Math.min(7, parseInt(document.getElementById('cfg-num-rounds')?.value, 10) || 5));
-    const startCapital = Math.max(200, Math.min(5000, parseInt(document.getElementById('cfg-start-capital')?.value, 10) || 1000));
     const enabled = [];
     for (const r of OPTIONAL_REGIMES) {
       const el = document.getElementById(`cfg-regime-${r}`);
@@ -410,7 +409,6 @@ window.hostApp = {
       ...state.config,
       numFirms,
       numRounds,
-      startCapital,
       enabledRegimes: enabled,
       offsetAuctionEnabled,
     });
@@ -560,6 +558,22 @@ function renderSetup() {
              onchange="window.hostApp.setFirmName(${i}, this.value)" placeholder="Firm name" aria-label="Name for firm ${i + 1}">
     </div>`).join('');
 
+  const derived = deriveSessionParams(state.config.numFirms, state.config.numRounds, state.config);
+  const derivedSummary = `
+    <div class="info-box accent" style="margin-top:0.75rem;font-size:0.84rem;">
+      <strong>Auto-tuned parameters</strong> (calibrated from your firm/round choices)
+      <div style="margin-top:0.5rem;">
+        <div class="stat-row" style="border-bottom:1px solid rgba(0,0,0,0.06);"><span class="stat-label">Starting capital</span><span class="stat-value">${fmtMoney(derived.startCapital)}</span></div>
+        <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.35rem;margin-top:0.15rem;">Set so free-market growth triggers catastrophe before the final round</div>
+        <div class="stat-row" style="border-bottom:1px solid rgba(0,0,0,0.06);"><span class="stat-label">Clean tech slots</span><span class="stat-value">${derived.maxCleanTech} of ${state.config.numFirms} firms</span></div>
+        <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.35rem;margin-top:0.15rem;">Maintains firm heterogeneity for Carbon Tax and Cap regimes</div>
+        <div class="stat-row" style="border-bottom:1px solid rgba(0,0,0,0.06);"><span class="stat-label">Clean tech setup cost</span><span class="stat-value">${fmtMoney(derived.cleanTechCost)}/round</span></div>
+        <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.35rem;margin-top:0.15rem;">Clean firms earn less in rounds 1\u20132 of the Carbon Tax (fairness lesson), then overtake</div>
+        <div class="stat-row"><span class="stat-label">Permits per firm (Cap regimes)</span><span class="stat-value">${derived.permitsPerFirm}</span></div>
+        <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:0.15rem;">Ensures permits actually constrain production below free-market levels</div>
+      </div>
+    </div>`;
+
   const sessionOptionsCard = !state.gameStarted ? `
     <div class="card">
       <h2>Session options</h2>
@@ -575,10 +589,6 @@ function renderSetup() {
           <label for="cfg-num-rounds">Rounds per regime</label>
           <input type="number" id="cfg-num-rounds" min="3" max="7" value="${state.config.numRounds}">
         </div>
-      </div>
-      <div class="form-group">
-        <label for="cfg-start-capital">Starting capital ($)</label>
-        <input type="number" id="cfg-start-capital" min="200" max="5000" step="50" value="${state.config.startCapital}">
       </div>
       <fieldset class="regime-toggle-fieldset">
         <legend>Regimes after free market</legend>
@@ -598,14 +608,16 @@ function renderSetup() {
       <button type="button" class="btn btn-outline btn-block" onclick="window.hostApp.applySessionConfig()">
         Apply session options
       </button>
+      ${derivedSummary}
     </div>` : `
     <div class="card">
-      <h2>Session options</h2>
+      <h2>Session options (locked)</h2>
       <p style="font-size:0.88rem;color:var(--text-secondary);">
         ${state.config.numFirms} firms, ${state.config.numRounds} rounds per regime, starting capital ${fmtMoney(state.config.startCapital)}.
         Regimes: ${seq.map(r => REGIME_LABELS[r]).join(' \u2192 ')}.
         ${state.config.offsetAuctionEnabled ? 'Offset auction is enabled for Cap &amp; Trade.' : ''}
       </p>
+      ${derivedSummary}
     </div>`;
 
   return `

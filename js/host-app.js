@@ -7,7 +7,7 @@ import {
   REGIME_NAV_LABELS, processRound, processPermitTrade, completeRegime,
   computeDeadweightLoss, undoLastRound, defaultPermitsPerFirm,
   maxAllowedProduction, maxAffordable, unitsPerPermit, permitsRemaining,
-  maxProductionFromPermits, normalizeStateFromRemote,
+  maxProductionFromPermits, normalizeStateFromRemote, totalTaxPaidByFirm,
 } from './game-engine.js';
 
 import {
@@ -599,15 +599,41 @@ function renderRegimeSummary(regime, d, config, nextRegime, nextLabel) {
   const isTax = regimeUsesTax(regime);
   const hasMarket = regimeHasPermitMarket(regime);
 
+  const showTaxCol = regime === 'tax';
+  const showPermitCol = regime === 'trade' || regime === 'trademarket';
+
   const firmRows = state.firms.map((f, i) => {
     const fd = d.firms[i];
+    const taxCell = showTaxCol ? `<td class="num">${fmtMoney(totalTaxPaidByFirm(d, i, config))}</td>` : '';
+    const permitCell = showPermitCol ? `<td class="num">${fmt(permitsRemaining(fd))}</td>` : '';
     return `<tr>
       <td style="color:${firmColor(i)};font-weight:600;">${f.name}</td>
       <td class="num">${fmt(fd.totalProduced)}</td>
+      ${taxCell}
+      ${permitCell}
       <td class="num">${fmtMoney(fd.totalProfit)}</td>
       <td class="num">${fmtMoney(fd.capital)}</td>
     </tr>`;
   }).join('');
+
+  const taxHead = showTaxCol ? '<th class="num">Tax paid</th>' : '';
+  const permitHead = showPermitCol ? '<th class="num">Unused permits</th>' : '';
+
+  let permitSummaryHtml = '';
+  if (showPermitCol) {
+    const withUnused = d.firms.map((fd, i) => ({ i, name: state.firms[i].name, u: permitsRemaining(fd) })).filter(x => x.u > 0);
+    if (withUnused.length) {
+      permitSummaryHtml = `
+        <div class="info-box warn mt-1" style="font-size:0.88rem;">
+          <strong>Unused permits:</strong> ${withUnused.map(x => `${x.name} (${fmt(x.u)})`).join('; ')} finished with permits left unused.
+        </div>`;
+    } else {
+      permitSummaryHtml = `
+        <div class="info-box success mt-1" style="font-size:0.88rem;">
+          No firm finished with unused permits (all permit capacity was used for production).
+        </div>`;
+    }
+  }
 
   let dwlHtml = '';
   if (regime !== 'freemarket') {
@@ -724,12 +750,13 @@ function renderRegimeSummary(regime, d, config, nextRegime, nextLabel) {
       <h2>Regime Summary: ${REGIME_LABELS[regime]}</h2>
       ${dwlHtml}
       <table>
-        <thead><tr><th>Firm</th><th class="num">Total Produced</th><th class="num">Total Profit</th><th class="num">Final Capital</th></tr></thead>
+        <thead><tr><th>Firm</th><th class="num">Total Produced</th>${taxHead}${permitHead}<th class="num">Total Profit</th><th class="num">Final Capital</th></tr></thead>
         <tbody>
           ${firmRows}
-          <tr class="total"><td>Total</td><td class="num">${fmt(totalProd)}</td><td class="num">${fmtMoney(totalProfit)}</td><td></td></tr>
+          <tr class="total"><td>Total</td><td class="num">${fmt(totalProd)}</td>${showTaxCol ? '<td></td>' : ''}${showPermitCol ? '<td></td>' : ''}<td class="num">${fmtMoney(totalProfit)}</td><td></td></tr>
         </tbody>
       </table>
+      ${permitSummaryHtml}
       <div class="stat-row"><span class="stat-label">Catastrophe triggered?</span>
         <span class="stat-value">${d.catastrophe ? '\ud83d\udca5 YES' : '\u2705 No'}</span></div>
       ${taxHtml}

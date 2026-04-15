@@ -111,19 +111,19 @@ export function debriefPrompt(regime) {
   const prompts = {
     freemarket: {
       question: 'The free market led to unchecked emissions. What rule change would you propose to prevent catastrophe while still allowing firms to operate profitably?',
-      hint: 'Think about what went wrong: every firm had an incentive to produce as much as possible. How could you change the rules so that each firm bears the cost of its own pollution?',
+      hint: '',
     },
     cac: {
-      question: 'Command & control capped each firm equally. Was that fair? Was it efficient? What rule change would you propose to improve on this approach?',
-      hint: 'Consider: some firms might be able to reduce pollution more cheaply than others. A uniform cap treats them all the same. What if firms could pay for the right to pollute — or trade that right?',
+      question: 'Command & control capped each firm equally. What problems did you notice? What would you change?',
+      hint: '',
     },
     tax: {
       question: 'The carbon tax put a price on pollution but didn\'t guarantee a specific emissions level. What would you change to get more certainty about total emissions?',
-      hint: 'The tax gave price certainty (firms knew the cost of polluting) but not quantity certainty (total emissions depended on how firms responded). How could you guarantee a specific emissions level instead?',
+      hint: '',
     },
     trade: {
       question: 'The permit cap controlled total emissions but some firms were stuck with permits they didn\'t need, while others wanted more. What would you change?',
-      hint: 'If a firm has spare permits and another firm would pay good money for them, both could be better off. What if you allowed firms to trade permits?',
+      hint: '',
     },
     trademarket: {
       question: 'Cap & Trade combined a hard limit on emissions with a market for permits. What are the strengths and weaknesses of this approach? Could you improve it further?',

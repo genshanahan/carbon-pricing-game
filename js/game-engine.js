@@ -164,6 +164,19 @@ export function maxAllowedProduction(firmData, config, regime) {
   return cap;
 }
 
+/** Total carbon tax paid by one firm across all completed rounds in a regime. */
+export function totalTaxPaidByFirm(d, firmIndex, config) {
+  const fd = d.firms[firmIndex];
+  if (!fd || !Array.isArray(d.rounds)) return 0;
+  let total = 0;
+  for (const r of d.rounds) {
+    const p = (r.production && r.production[firmIndex]) || 0;
+    const rate = fd.cleanTech ? config.taxRate / 2 : config.taxRate;
+    total += p * rate;
+  }
+  return total;
+}
+
 export function defaultPermitsPerFirm(config) {
   const totalSafe = Math.floor(config.maxThingamabobs / 1000);
   return Math.floor(totalSafe / config.numFirms);

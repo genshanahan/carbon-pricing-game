@@ -122,11 +122,17 @@ export function onProposals(roomCode, regime, callback) {
 /* ── Clean-tech claims (first-come slots; facilitator mirrors checkboxes here) ── */
 
 function normalizeCleantechClaims(current) {
-  if (!current || typeof current !== 'object' || Array.isArray(current)) return {};
+  if (!current || typeof current !== 'object') return {};
   const out = {};
+  if (Array.isArray(current)) {
+    for (let i = 0; i < current.length; i++) {
+      if (current[i]) out[String(i)] = true;
+    }
+    return out;
+  }
   for (const k of Object.keys(current)) {
     if (k.startsWith('.')) continue;
-    out[k] = current[k];
+    if (current[k]) out[k] = true;
   }
   return out;
 }

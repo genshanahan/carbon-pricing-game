@@ -3,7 +3,7 @@
  */
 
 import {
-  REGIMES, REGIME_LABELS, buildConfig, maxAllowedProduction, unitsPerPermit,
+  REGIMES, REGIME_LABELS, buildConfig, regimeSequence, maxAllowedProduction, unitsPerPermit,
   permitsRemaining, normalizeStateFromRemote, maxAffordable, maxProductionFromPermits,
   totalTaxPaidByFirm, roundProfitDetailForFirm, computeDeadweightLoss,
 } from './game-engine.js';
@@ -62,7 +62,7 @@ function syncCleanTechStudentListener() {
   }
   const r = state.regime;
   const d = state.regimeData[r];
-  const want = REGIMES.includes(r) && regimeUsesCleanTech(r) && d
+  const want = activeRegimes().includes(r) && regimeUsesCleanTech(r) && d
     && d.currentRound === 0 && d.rounds.length === 0;
   const key = want ? r : null;
   if (key === cleantechStudentKey && cleantechStudentUnsub) return;
@@ -146,6 +146,10 @@ function renderCleanTechClaimCard(regime, d, fd, config) {
 const content = document.getElementById('content');
 const firmNameEl = document.getElementById('firmNameHeader');
 
+function activeRegimes() {
+  return state ? regimeSequence(state.config) : REGIMES;
+}
+
 /* ── Init ── */
 
 async function init() {
@@ -181,7 +185,7 @@ function render() {
     case 'setup': content.innerHTML = renderWaiting('The facilitator is setting up the game. Please wait…'); break;
     case 'results': content.innerHTML = renderResults(); break;
     default:
-      if (REGIMES.includes(state.regime)) content.innerHTML = renderRegime(state.regime);
+      if (activeRegimes().includes(state.regime)) content.innerHTML = renderRegime(state.regime);
       else content.innerHTML = renderWaiting('Waiting for the facilitator…');
   }
 }
@@ -538,7 +542,7 @@ function renderFirmSummary(regime, d, fd) {
       <div class="stat-row"><span class="stat-label">Total profit</span><span class="stat-value">${fmtMoney(fd.totalProfit)}</span></div>
       <div class="stat-row"><span class="stat-label">Final capital</span><span class="stat-value">${fmtMoney(fd.capital)}</span></div>
       ${extraRows}
-      <div class="stat-row"><span class="stat-label">Catastrophe?</span><span class="stat-value">${d.catastrophe ? '\ud83d\udca5 YES' : '\u2705 No'}</span></div>
+      <div class="stat-row"><span class="stat-label">Catastrophe?</span><span class="stat-value">${d.catastrophe ? 'Yes' : 'No'}</span></div>
     </div>
     ${dwlHtml}
     ${dwlAnalogHtml}
@@ -573,7 +577,7 @@ function renderMyHistory(d) {
 /* ── Results view ── */
 
 function renderResults() {
-  const completed = (state.completedRegimes || []).filter(r => REGIMES.includes(r));
+  const completed = (state.completedRegimes || []).filter(r => activeRegimes().includes(r));
   if (completed.length === 0) return '<div class="card"><h2>Results</h2><p>No regimes completed yet.</p></div>';
 
   const fd = completed.map(r => state.regimeData[r].firms[FIRM_ID]);
@@ -583,7 +587,7 @@ function renderResults() {
       <td class="num">${fmt(fd[ri].totalProduced)}</td>
       <td class="num">${fmtMoney(fd[ri].totalProfit)}</td>
       <td class="num">${fmtMoney(fd[ri].capital)}</td>
-      <td class="num">${state.regimeData[r].catastrophe ? '\ud83d\udca5' : '\u2705'}</td>
+      <td class="num">${state.regimeData[r].catastrophe ? 'No' : 'Yes'}</td>
     </tr>`).join('');
 
   return `
@@ -615,7 +619,7 @@ function renderResults() {
 window.playApp = {
   setCalcSimCleanTech(val) {
     calcSimCleanTech = !!val;
-    if (!state || !REGIMES.includes(state.regime)) return;
+    if (!state || !activeRegimes().includes(state.regime)) return;
     render();
     const regime = state.regime;
     const inp = document.getElementById('calcInput');

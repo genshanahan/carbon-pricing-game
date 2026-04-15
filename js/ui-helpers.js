@@ -15,12 +15,17 @@ export function fmtMoney(n) {
 export function renderCO2Meter(ppm, config, extra) {
   const pct = Math.min(((ppm - config.startPpm) / (config.triggerPpm - config.startPpm)) * 100, 100);
   const danger = ppm >= config.triggerPpm;
-  const barColor = danger ? '#e74c3c' : pct > 75 ? '#e67e22' : pct > 50 ? '#f1c40f' : '#2ecc71';
+  let fillClass = 'co2-bar-fill--low';
+  if (danger) fillClass = 'co2-bar-fill--danger';
+  else if (pct > 75) fillClass = 'co2-bar-fill--high';
+  else if (pct > 50) fillClass = 'co2-bar-fill--mid';
   return `
     <div class="co2-meter ${danger ? 'danger' : ''}">
       <div class="ppm-value">${fmt(ppm)} ppm</div>
-      <div class="ppm-label">CO\u2082 Concentration ${danger ? '\u2014 CATASTROPHE TRIGGERED' : ''}</div>
-      <div class="co2-bar"><div class="co2-bar-fill" style="width:${pct}%;background:${barColor};"></div></div>
+      <div class="ppm-label">CO\u2082 concentration ${danger ? '\u2014 catastrophe threshold reached' : ''}</div>
+      <div class="co2-bar" role="progressbar" aria-valuemin="${config.startPpm}" aria-valuemax="${config.triggerPpm}" aria-valuenow="${Math.round(ppm)}" aria-label="CO2 concentration progress toward catastrophe threshold">
+        <div class="co2-bar-fill ${fillClass}" style="width:${pct}%;"></div>
+      </div>
       <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-secondary);">
         <span>${config.startPpm} ppm (start)</span><span>${config.triggerPpm} ppm (trigger)</span>
       </div>

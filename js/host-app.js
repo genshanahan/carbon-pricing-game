@@ -4,10 +4,12 @@
 
 import {
   buildConfig, createInitialState, initRegimeData, REGIMES, REGIME_LABELS,
-  REGIME_NAV_LABELS, processRound, processPermitTrade, completeRegime,
+  processRound, processPermitTrade, completeRegime,
   computeDeadweightLoss, undoLastRound, defaultPermitsPerFirm,
   maxAllowedProduction, maxAffordable, unitsPerPermit, permitsRemaining,
   maxProductionFromPermits, normalizeStateFromRemote, totalTaxPaidByFirm,
+  regimeSequence, nextRegimeAfter, previousRegimeInSession, resizeFirmsList,
+  injectOffsetPermits, OPTIONAL_REGIMES,
 } from './game-engine.js';
 
 import {
@@ -48,6 +50,105 @@ let cleantechKey = null;
  * Instead we overlay at render time via firmHasCleanTech / countCleanTechSlots.
  */
 const cleantechClaimsByRegime = {};
+
+let resultsChartInstances = [];
+
+const CHART_REGIME_COLORS = {
+  freemarket: '#0072B2',
+  cac: '#D55E00',
+  tax: '#009E73',
+  trade: '#CC79A7',
+  trademarket: '#E69F00',
+};
+
+function destroyResultsCharts() {
+  resultsChartInstances.forEach(ch => { try { ch.destroy(); } catch (_) { /* noop */ } });
+  resultsChartInstances = [];
+}
+
+function sessionRegimes() {
+  return state ? regimeSequence(state.config) : REGIMES;
+}
+
+function escAttr(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
+}
+
+function mountResultsCharts() {
+  if (typeof Chart === 'undefined' || !state) return;
+  const seq = sessionRegimes();
+  const completed = state.completedRegimes.filter(r => seq.includes(r));
+  if (completed.length === 0) return;
+
+  const maxR = Math.max(...completed.map(r => state.regimeData[r].rounds.length), 1);
+  const ppmLabels = Array.from({ length: maxR + 1 }, (_, i) => (i === 0 ? 'Start' : `Round ${i}`));
+
+  const ppmDatasets = completed.map(r => {
+    const d = state.regimeData[r];
+    const pts = [state.config.startPpm];
+    for (const round of d.rounds) pts.push(round.ppmAfter);
+    while (pts.length < maxR + 1) pts.push(pts[pts.length - 1]);
+    return {
+      label: REGIME_LABELS[r],
+      data: pts.slice(0, maxR + 1),
+      borderColor: CHART_REGIME_COLORS[r] || '#333',
+      backgroundColor: 'transparent',
+      tension: 0.15,
+      fill: false,
+    };
+  });
+
+  const elPpm = document.getElementById('chartPpmByRound');
+  if (elPpm) {
+    resultsChartInstances.push(new Chart(elPpm, {
+      type: 'line',
+      data: { labels: ppmLabels, datasets: ppmDatasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        aspectRatio: 2,
+        plugins: {
+          title: { display: true, text: 'CO\u2082 concentration (ppm) after each round' },
+          legend: { position: 'bottom' },
+        },
+        scales: {
+          y: { title: { display: true, text: 'ppm' } },
+        },
+      },
+    }));
+  }
+
+  const firmLabels = state.firms.map(f => f.name);
+  const profitDatasets = completed.map(r => ({
+    label: REGIME_LABELS[r],
+    data: state.firms.map((_, i) => state.regimeData[r].firms[i].totalProfit),
+    backgroundColor: CHART_REGIME_COLORS[r] || '#888',
+  }));
+
+  const elBar = document.getElementById('chartProfitByFirm');
+  if (elBar) {
+    resultsChartInstances.push(new Chart(elBar, {
+      type: 'bar',
+      data: { labels: firmLabels, datasets: profitDatasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        aspectRatio: 1.6,
+        plugins: {
+          title: { display: true, text: 'Total profit by firm ($)' },
+          legend: { position: 'bottom' },
+        },
+        scales: {
+          x: { stacked: false, title: { display: true, text: 'Firm' } },
+          y: { title: { display: true, text: 'Profit ($)' } },
+        },
+      },
+    }));
+  }
+}
 
 /** Does firm `i` have clean tech in `regime`? (union of state + RTDB claims cache) */
 function firmHasCleanTech(regime, i) {
@@ -103,7 +204,7 @@ export async function init() {
       console.log(`[HOST] onStateChange: regime=${state.regime}, cleantechCache=`, JSON.stringify(cleantechClaimsByRegime));
       renderNav();
       listenForSubmissions();
-      if (REGIMES.includes(state.regime)) {
+      if (sessionRegimes().includes(state.regime)) {
         const rd = state.regimeData[state.regime];
         if (rd && rd.debriefActive) listenForProposals(state.regime);
       }
@@ -128,23 +229,24 @@ async function sync() {
 function renderNav() {
   if (!state) return;
   const navFree = !!state.facilitatorNavUnlocked;
+  const seq = sessionRegimes();
   const jumpOptions = [
     ['', 'Skip to\u2026'],
     ['setup', 'Setup'],
-    ...REGIMES.map(r => [r, REGIME_NAV_LABELS[r]]),
+    ...seq.map((r, idx) => [r, `${idx + 1}. ${REGIME_LABELS[r]}`]),
     ['results', 'Results'],
   ].map(([val, label]) => `<option value="${val}">${label}</option>`).join('');
   navEl.innerHTML = `
     <div class="regime-nav-row">
     <button class="regime-btn ${state.regime === 'setup' ? 'active' : ''} ${state.completedRegimes.includes('setup') ? 'completed' : ''}"
             onclick="window.hostApp.switchRegime('setup')">Setup</button>
-    ${REGIMES.map(r => {
+    ${seq.map((r, idx) => {
       const visible = navFree || state.completedRegimes.includes(getPrevRegime(r)) || state.regime === r || state.completedRegimes.includes(r);
       const active = state.regime === r;
       const completed = state.completedRegimes.includes(r);
       return `<button class="regime-btn ${active ? 'active' : ''} ${completed ? 'completed' : ''} ${!visible ? 'locked' : ''}"
                       onclick="window.hostApp.switchRegime('${r}')"
-                      ${!visible ? 'disabled' : ''}>${REGIME_NAV_LABELS[r]}</button>`;
+                      ${!visible ? 'disabled' : ''}>${idx + 1}. ${REGIME_LABELS[r]}</button>`;
     }).join('')}
     <button class="regime-btn ${state.regime === 'results' ? 'active' : ''}"
             onclick="window.hostApp.switchRegime('results')">Results</button>
@@ -167,9 +269,8 @@ function renderNav() {
 }
 
 function getPrevRegime(regime) {
-  const idx = REGIMES.indexOf(regime);
-  if (idx <= 0) return 'setup';
-  return REGIMES[idx - 1];
+  if (!state) return 'setup';
+  return previousRegimeInSession(state.config, regime);
 }
 
 function renderConnectionDots() {
@@ -185,8 +286,12 @@ function renderConnectionDots() {
 window.hostApp = {
   switchRegime(regime) {
     if (!state) return;
+    const seq = sessionRegimes();
+    if (state.regime === 'setup' && regime !== 'setup' && seq.includes(regime)) {
+      state.gameStarted = true;
+    }
     state.regime = regime;
-    if (REGIMES.includes(regime) && !state.regimeData[regime]) {
+    if (seq.includes(regime) && !state.regimeData[regime]) {
       state.regimeData[regime] = initRegimeData(state.config);
     }
     listenForSubmissions();
@@ -266,7 +371,7 @@ window.hostApp = {
     currentProposals = {};
     completeRegime(state, regime);
     state.regime = next;
-    if (REGIMES.includes(next) && !state.regimeData[next]) {
+    if (sessionRegimes().includes(next) && !state.regimeData[next]) {
       state.regimeData[next] = initRegimeData(state.config);
     }
     listenForSubmissions();
@@ -288,6 +393,38 @@ window.hostApp = {
       undoLastRound(state, regime);
       sync();
     }
+  },
+
+  applySessionConfig() {
+    if (!state || state.gameStarted) return;
+    const numFirms = Math.max(3, Math.min(8, parseInt(document.getElementById('cfg-num-firms')?.value, 10) || 5));
+    const numRounds = Math.max(3, Math.min(7, parseInt(document.getElementById('cfg-num-rounds')?.value, 10) || 5));
+    const startCapital = Math.max(200, Math.min(5000, parseInt(document.getElementById('cfg-start-capital')?.value, 10) || 1000));
+    const enabled = [];
+    for (const r of OPTIONAL_REGIMES) {
+      const el = document.getElementById(`cfg-regime-${r}`);
+      if (el && el.checked) enabled.push(r);
+    }
+    const offsetAuctionEnabled = !!document.getElementById('cfg-offset-auction')?.checked;
+    const nextCfg = buildConfig({
+      ...state.config,
+      numFirms,
+      numRounds,
+      startCapital,
+      enabledRegimes: enabled,
+      offsetAuctionEnabled,
+    });
+    state.config = nextCfg;
+    state.firms = resizeFirmsList(state.firms, numFirms);
+    sync();
+  },
+
+  injectOffsetAuction(regime) {
+    if (!state) return;
+    const per = parseInt(document.getElementById('offset-permits-per-firm')?.value, 10) || 1;
+    const res = injectOffsetPermits(state, regime, per);
+    if (res.error) { alert(res.error); return; }
+    sync();
   },
 
   resetGame() {
@@ -319,7 +456,7 @@ function bakeCleanTechIntoState(regime) {
 /* ── Submission listener ── */
 
 function listenForSubmissions() {
-  if (!state || !REGIMES.includes(state.regime)) {
+  if (!state || !sessionRegimes().includes(state.regime)) {
     if (submissionUnsub) { submissionUnsub(); submissionUnsub = null; submissionKey = null; }
     return;
   }
@@ -347,7 +484,7 @@ function listenForSubmissions() {
 /* ── Clean-tech claims listener ── */
 
 function listenForCleanTechClaims() {
-  if (!state || !REGIMES.includes(state.regime)) {
+  if (!state || !sessionRegimes().includes(state.regime)) {
     console.log('[HOST] listenForCleanTechClaims: no state or not a regime, unsubscribing');
     if (cleantechUnsub) { cleantechUnsub(); cleantechUnsub = null; cleantechKey = null; }
     return;
@@ -392,15 +529,19 @@ function listenForProposals(regime) {
 function render() {
   if (!state) { content.innerHTML = '<div class="card"><p>Loading…</p></div>'; return; }
 
+  destroyResultsCharts();
   switch (state.regime) {
     case 'setup': content.innerHTML = renderSetup(); break;
     case 'results': content.innerHTML = renderResults(); break;
     default:
-      if (REGIMES.includes(state.regime)) {
+      if (sessionRegimes().includes(state.regime)) {
         content.innerHTML = renderRegime(state.regime);
       } else {
         content.innerHTML = `<div class="card"><h2>Unrecognised game state</h2><p>Regime is <code>${String(state.regime)}</code>. Try resetting the game or creating a new room.</p><button class="btn btn-primary" onclick="window.hostApp.resetGame()">Reset Game</button></div>`;
       }
+  }
+  if (state.regime === 'results') {
+    requestAnimationFrame(() => mountResultsCharts());
   }
 }
 
@@ -409,34 +550,86 @@ function render() {
 function renderSetup() {
   const joinUrl = new URL('index.html', window.location.href);
   joinUrl.searchParams.set('room', ROOM);
+  const seq = sessionRegimes();
+  const regimeCountLabel = seq.length === 1 ? 'one regime (free market only)' : `${seq.length} regulatory regimes`;
 
   const nameInputs = state.firms.map((f, i) => `
     <div class="prod-input-card">
       <div class="firm-name" style="color:${firmColor(i)}">Firm ${i + 1}</div>
-      <input type="text" value="${f.name}"
-             onchange="window.hostApp.setFirmName(${i}, this.value)" placeholder="Firm name">
+      <input type="text" value="${escAttr(f.name)}"
+             onchange="window.hostApp.setFirmName(${i}, this.value)" placeholder="Firm name" aria-label="Name for firm ${i + 1}">
     </div>`).join('');
+
+  const sessionOptionsCard = !state.gameStarted ? `
+    <div class="card">
+      <h2>Session options</h2>
+      <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:1rem;">
+        Set these before you begin Round 1. Once the game starts, session options are locked (use <strong>Reset game</strong> to change them).
+      </p>
+      <div class="two-col">
+        <div class="form-group">
+          <label for="cfg-num-firms">Number of firms</label>
+          <input type="number" id="cfg-num-firms" min="3" max="8" value="${state.config.numFirms}">
+        </div>
+        <div class="form-group">
+          <label for="cfg-num-rounds">Rounds per regime</label>
+          <input type="number" id="cfg-num-rounds" min="3" max="7" value="${state.config.numRounds}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="cfg-start-capital">Starting capital ($)</label>
+        <input type="number" id="cfg-start-capital" min="200" max="5000" step="50" value="${state.config.startCapital}">
+      </div>
+      <fieldset class="regime-toggle-fieldset">
+        <legend>Regimes after free market</legend>
+        <p style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.5rem;">
+          Free market is always first. Cap &amp; Trade automatically includes Cap if selected.
+        </p>
+        ${OPTIONAL_REGIMES.map(r => `
+          <label class="checkbox-inline"><input type="checkbox" id="cfg-regime-${r}" value="${r}"
+            ${state.config.enabledRegimes.includes(r) ? 'checked' : ''}> ${REGIME_LABELS[r]}</label>`).join('')}
+      </fieldset>
+      <div class="form-group" style="margin-top:0.75rem;">
+        <label class="checkbox-inline">
+          <input type="checkbox" id="cfg-offset-auction" ${state.config.offsetAuctionEnabled ? 'checked' : ''}>
+          Enable offset auction (extra permits in Cap &amp; Trade)
+        </label>
+      </div>
+      <button type="button" class="btn btn-outline btn-block" onclick="window.hostApp.applySessionConfig()">
+        Apply session options
+      </button>
+    </div>` : `
+    <div class="card">
+      <h2>Session options</h2>
+      <p style="font-size:0.88rem;color:var(--text-secondary);">
+        ${state.config.numFirms} firms, ${state.config.numRounds} rounds per regime, starting capital ${fmtMoney(state.config.startCapital)}.
+        Regimes: ${seq.map(r => REGIME_LABELS[r]).join(' \u2192 ')}.
+        ${state.config.offsetAuctionEnabled ? 'Offset auction is enabled for Cap &amp; Trade.' : ''}
+      </p>
+    </div>`;
 
   return `
     <div class="card room-hero">
       <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.25rem;">Room Code</div>
-      <div class="room-code">${ROOM}</div>
-      <img class="qr-img" src="${qrCodeUrl(joinUrl.toString())}" alt="QR code to join" width="200" height="200">
+      <div class="room-code" aria-label="Room code">${ROOM}</div>
+      <img class="qr-img" src="${qrCodeUrl(joinUrl.toString())}" alt="QR code to join this game room" width="200" height="200">
       <div class="join-url">${joinUrl.toString()}</div>
     </div>
 
     ${onboardingGuide()}
 
+    ${sessionOptionsCard}
+
     <div class="card">
       <h2>Game Setup</h2>
       <div class="info-box accent">
         <strong>Carbon Pricing Simulation Game</strong> &mdash; ${state.config.numFirms} firms compete across
-        five regulatory regimes. Each thingamabob costs ${fmtMoney(state.config.costPerUnit)},
+        ${regimeCountLabel}. Each thingamabob costs ${fmtMoney(state.config.costPerUnit)},
         sells for ${fmtMoney(state.config.revenuePerUnit)}, and adds ${state.config.ppmPer1000} ppm
         CO\u2082 per 1,000 produced. Starting capital: ${fmtMoney(state.config.startCapital)}.
         Starting CO\u2082: ${state.config.startPpm} ppm. Catastrophe at ${state.config.triggerPpm} ppm.
       </div>
-      <h3>Name the Firms</h3>
+      <h3>Name the firms</h3>
       <div class="prod-grid">${nameInputs}</div>
       <div class="mt-1">
         <button class="btn btn-primary btn-block" onclick="window.hostApp.switchRegime('freemarket')">
@@ -459,14 +652,8 @@ function renderRegime(regime) {
   const hasMarket = regimeHasPermitMarket(regime);
   const usesClean = regimeUsesCleanTech(regime);
 
-  const nextMap = {
-    freemarket: ['cac', 'Command & Control'],
-    cac: ['tax', 'Carbon Tax'],
-    tax: ['trade', 'Cap'],
-    trade: ['trademarket', 'Cap & Trade'],
-    trademarket: ['results', 'Results'],
-  };
-  const [nextRegime, nextLabel] = nextMap[regime] || ['results', 'Results'];
+  const nextRegime = nextRegimeAfter(state.config, regime);
+  const nextLabel = nextRegime === 'results' ? 'Results' : REGIME_LABELS[nextRegime];
 
   const fnotes = facilitatorNotes(regime);
   let fnotesHtml = '';
@@ -632,6 +819,23 @@ function renderPermitMarket(regime, d, config) {
         <div class="form-group"><label>Price per permit ($)</label><input type="number" id="tm-price" min="0" step="1" value="150"></div>
       </div>
       <button class="btn btn-success" onclick="window.hostApp.recordTrade('${regime}')">Record Trade</button>
+
+      ${regime === 'trademarket' && config.offsetAuctionEnabled ? `
+      <div class="offset-auction-panel info-box warn mt-1" style="margin-bottom:0;">
+        <h4 style="font-size:0.9rem;margin-bottom:0.35rem;">Offset auction</h4>
+        <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:0.65rem;">
+          Issue the same number of <strong>extra</strong> permits to every firm (for example a government permit sale mid-session).
+        </p>
+        <div class="two-col" style="align-items:flex-end;">
+          <div class="form-group" style="margin-bottom:0;">
+            <label for="offset-permits-per-firm">Extra permits per firm</label>
+            <input type="number" id="offset-permits-per-firm" min="1" max="30" value="1">
+          </div>
+          <div style="margin-bottom:0.5rem;">
+            <button type="button" class="btn btn-warn" onclick="window.hostApp.injectOffsetAuction('${regime}')">Add permits to all firms</button>
+          </div>
+        </div>
+      </div>` : ''}
 
       <div class="two-col mt-1">
         <div>
@@ -890,7 +1094,7 @@ function renderRegimeSummary(regime, d, config, nextRegime, nextLabel) {
       </table>
       ${permitSummaryHtml}
       <div class="stat-row"><span class="stat-label">Catastrophe triggered?</span>
-        <span class="stat-value">${d.catastrophe ? '\ud83d\udca5 YES' : '\u2705 No'}</span></div>
+        <span class="stat-value">${d.catastrophe ? 'Yes' : 'No'}</span></div>
       ${taxHtml}
       ${marketHtml}
       ${ppmContextHtml}
@@ -904,7 +1108,7 @@ function renderRegimeSummary(regime, d, config, nextRegime, nextLabel) {
 /* ── Results ── */
 
 function renderResults() {
-  const completed = state.completedRegimes.filter(r => REGIMES.includes(r));
+  const completed = state.completedRegimes.filter(r => sessionRegimes().includes(r));
   if (completed.length === 0) {
     return '<div class="card"><h2>Results</h2><p>No regimes completed yet.</p></div>';
   }
@@ -919,7 +1123,7 @@ function renderResults() {
       <td><strong>${REGIME_LABELS[r]}</strong></td>
       <td class="num">${fmt(totalProd)}</td>
       <td class="num">${fmt(d.ppm)}</td>
-      <td class="num">${d.catastrophe ? '\ud83d\udca5 Yes' : '\u2705 No'}</td>
+      <td class="num">${d.catastrophe ? 'Yes' : 'No'}</td>
       <td class="num">${fmtMoney(totalProfit)}</td>
       <td class="num">${dwl}</td>
       <td class="num">${taxRev}</td>
@@ -944,11 +1148,24 @@ function renderResults() {
     </div>
 
     <div class="card">
-      <h3>Profit by Firm Across Regimes</h3>
+      <h3>Profit by firm across regimes</h3>
       <table>
         <thead><tr><th>Firm</th>${completed.map(r => `<th class="num">${REGIME_LABELS[r]}</th>`).join('')}</tr></thead>
         <tbody>${firmCompRows}</tbody>
       </table>
+    </div>
+
+    <div class="card chart-card">
+      <h2>Charts</h2>
+      <p id="results-charts-summary" class="a11y-chart-summary" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.75rem;">
+        Line chart: CO\u2082 concentration after each round, by regime. Bar chart: each firm\u2019s total profit in each completed regime.
+      </p>
+      <div class="chart-wrap">
+        <canvas id="chartPpmByRound" role="img" aria-labelledby="results-charts-summary"></canvas>
+      </div>
+      <div class="chart-wrap" style="margin-top:1.25rem;">
+        <canvas id="chartProfitByFirm" role="img" aria-labelledby="results-charts-summary"></canvas>
+      </div>
     </div>
 
     <div class="card">

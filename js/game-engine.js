@@ -16,9 +16,17 @@ export const DEFAULTS = {
   cleanTechCost: 200,
   /** Max firms that can have clean tech (student claims + facilitator assignments). */
   maxCleanTech: 3,
+  /** Subset of {@link OPTIONAL_REGIMES} in canonical order (free market is always first). */
+  enabledRegimes: ['cac', 'tax', 'trade', 'trademarket'],
+  /** When true, facilitator can inject extra permits mid-session in Cap & Trade. */
+  offsetAuctionEnabled: false,
 };
 
+/** Full canonical order (free market + optional chain). */
 export const REGIMES = ['freemarket', 'cac', 'tax', 'trade', 'trademarket'];
+
+/** Regimes that can be toggled off in session configuration (always after free market). */
+export const OPTIONAL_REGIMES = ['cac', 'tax', 'trade', 'trademarket'];
 
 export const REGIME_LABELS = {
   freemarket: 'Free Market',
@@ -36,12 +44,59 @@ export const REGIME_NAV_LABELS = {
   trademarket: '5. Cap & Trade',
 };
 
+/**
+ * Normalise optional regime list: unknown ids removed, Cap & Trade implies Cap.
+ * @param {unknown} raw
+ * @returns {string[]}
+ */
+export function normaliseEnabledRegimes(raw) {
+  if (!Array.isArray(raw)) return [...OPTIONAL_REGIMES];
+  if (raw.length === 0) return [];
+  const set = new Set(raw.filter(r => OPTIONAL_REGIMES.includes(r)));
+  if (set.has('trademarket')) set.add('trade');
+  return OPTIONAL_REGIMES.filter(r => set.has(r));
+}
+
+/** Ordered list of regime ids for this session (always starts with free market). */
+export function regimeSequence(config) {
+  return ['freemarket', ...normaliseEnabledRegimes(config.enabledRegimes)];
+}
+
+/** Next screen after `regime` when completing debrief, or `'results'` if none. */
+export function nextRegimeAfter(config, regime) {
+  const seq = regimeSequence(config);
+  const i = seq.indexOf(regime);
+  if (i < 0 || i >= seq.length - 1) return 'results';
+  return seq[i + 1];
+}
+
+/** Previous regime tab in session order, or `'setup'` before free market. */
+export function previousRegimeInSession(config, regime) {
+  const seq = regimeSequence(config);
+  const i = seq.indexOf(regime);
+  if (i <= 0) return 'setup';
+  return seq[i - 1];
+}
+
 export function buildConfig(overrides = {}) {
   const c = { ...DEFAULTS, ...overrides };
+  c.enabledRegimes = normaliseEnabledRegimes(c.enabledRegimes);
+  c.numFirms = Math.max(3, Math.min(8, Math.round(Number(c.numFirms) || DEFAULTS.numFirms)));
+  c.numRounds = Math.max(3, Math.min(7, Math.round(Number(c.numRounds) || DEFAULTS.numRounds)));
+  c.startCapital = Math.max(200, Math.min(5000, Math.round(Number(c.startCapital) || DEFAULTS.startCapital)));
+  c.offsetAuctionEnabled = !!c.offsetAuctionEnabled;
   c.profitPerUnit = c.revenuePerUnit - c.costPerUnit;
   c.maxThingamabobs = (c.triggerPpm - c.startPpm) / c.ppmPer1000 * 1000;
   c.cacCap = Math.floor(c.maxThingamabobs / (c.numFirms * c.numRounds));
   return Object.freeze(c);
+}
+
+/** Resize firm name list when `numFirms` changes (preserves names where possible). */
+export function resizeFirmsList(existingFirms, n) {
+  return Array.from({ length: n }, (_, i) => ({
+    id: i,
+    name: (existingFirms[i] && String(existingFirms[i].name).trim()) || `Firm ${i + 1}`,
+  }));
 }
 
 /* ── State creation ── */
@@ -55,6 +110,8 @@ export function createInitialState(config) {
     regimeData: {},
     /** When true, facilitator can open any regime tab (multi-session resume / testing). */
     facilitatorNavUnlocked: false,
+    /** Set true once the facilitator leaves Setup for a regime (locks session configuration). */
+    gameStarted: false,
   };
 }
 
@@ -76,8 +133,21 @@ export function normalizeStateFromRemote(s) {
   if (!Array.isArray(o.firms)) o.firms = [];
   if (!o.regime) o.regime = 'setup';
   if (typeof o.facilitatorNavUnlocked !== 'boolean') o.facilitatorNavUnlocked = false;
+  if (typeof o.gameStarted !== 'boolean') o.gameStarted = false;
+  if (!o.gameStarted && o.regime && o.regime !== 'setup') o.gameStarted = true;
+  if (!o.gameStarted && o.regimeData && typeof o.regimeData === 'object') {
+    for (const key of Object.keys(o.regimeData)) {
+      const rd = o.regimeData[key];
+      if (!rd || typeof rd !== 'object') continue;
+      if ((Array.isArray(rd.rounds) && rd.rounds.length > 0) || (typeof rd.currentRound === 'number' && rd.currentRound > 0)) {
+        o.gameStarted = true;
+        break;
+      }
+    }
+  }
   if (!o.config || typeof o.config !== 'object') o.config = {};
   const mergedCfg = { ...DEFAULTS, ...o.config };
+  if (!Array.isArray(mergedCfg.enabledRegimes)) mergedCfg.enabledRegimes = [...OPTIONAL_REGIMES];
   for (const key of Object.keys(o.regimeData)) {
     o.regimeData[key] = normalizeRegimeDatum(o.regimeData[key], mergedCfg);
   }
@@ -108,6 +178,7 @@ export function initRegimeData(config, existingData) {
     totalTaxRevenue: 0,
     trades: [],
     debriefActive: false,
+    offsetInjectLog: [],
   };
 }
 
@@ -135,6 +206,7 @@ export function normalizeRegimeDatum(rd, config) {
     totalTaxRevenue: typeof rd.totalTaxRevenue === 'number' ? rd.totalTaxRevenue : 0,
     trades: Array.isArray(rd.trades) ? rd.trades : [],
     debriefActive: typeof rd.debriefActive === 'boolean' ? rd.debriefActive : false,
+    offsetInjectLog: Array.isArray(rd.offsetInjectLog) ? rd.offsetInjectLog : [],
   };
 }
 
@@ -277,6 +349,27 @@ export function processRound(state, regime, production) {
 
 /* ── Permit trading ── */
 
+/**
+ * Add the same number of extra permits to every firm (offset auction twist).
+ * Only for Cap & Trade; intended mid-round while rounds remain.
+ */
+export function injectOffsetPermits(state, regime, perFirm) {
+  const d = state.regimeData[regime];
+  if (!d || regime !== 'trademarket') {
+    return { error: 'Extra permits can only be added during Cap & Trade.' };
+  }
+  const n = Math.floor(Number(perFirm));
+  if (!Number.isFinite(n) || n <= 0) {
+    return { error: 'Enter a whole number of one or more extra permits per firm.' };
+  }
+  for (let i = 0; i < state.config.numFirms; i++) {
+    d.firms[i].permits += n;
+  }
+  if (!Array.isArray(d.offsetInjectLog)) d.offsetInjectLog = [];
+  d.offsetInjectLog.push({ perFirm: n, roundIndex: d.currentRound });
+  return { ok: true };
+}
+
 export function processPermitTrade(state, regime, seller, buyer, qty, price) {
   const d = state.regimeData[regime];
   const sellerFd = d.firms[seller];
@@ -309,12 +402,13 @@ export function processPermitTrade(state, regime, seller, buyer, qty, price) {
 /* ── Regime completion ── */
 
 export function completeRegime(state, regime) {
+  const seq = regimeSequence(state.config);
+  if (!seq.includes(regime)) return;
   if (!state.completedRegimes.includes(regime)) {
     state.completedRegimes.push(regime);
   }
-  const nextMap = { cac: 'tax', tax: 'trade', trade: 'trademarket' };
-  const next = nextMap[regime];
-  if (next && !state.regimeData[next]) {
+  const next = nextRegimeAfter(state.config, regime);
+  if (next !== 'results' && !state.regimeData[next]) {
     state.regimeData[next] = initRegimeData(state.config);
     state.regimeData[next].firms.forEach(fd => {
       fd.capital = state.config.startCapital;

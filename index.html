@@ -8,18 +8,51 @@
 </head>
 <body>
 
+<a class="skip-link" href="#main-content">Skip to main content</a>
+
 <header>
   <h1>The Carbon Pricing Simulation Game</h1>
   <p>An interactive classroom simulation of carbon regulation regimes</p>
 </header>
 
-<div class="container-narrow">
+<main id="main-content" class="container-narrow">
+
+  <details class="card" style="margin-bottom:1rem;">
+    <summary style="cursor:pointer;font-weight:600;color:var(--accent);">Session options (optional)</summary>
+    <p style="font-size:0.82rem;color:var(--text-secondary);margin:0.75rem 0;">
+      Defaults match a standard classroom run. Expand to change the number of firms, rounds, regimes, or starting capital before you create the room.
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+      <div class="form-group" style="margin-bottom:0;">
+        <label for="landing-num-firms">Firms (3&ndash;8)</label>
+        <input type="number" id="landing-num-firms" min="3" max="8" value="5">
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label for="landing-num-rounds">Rounds per regime (3&ndash;7)</label>
+        <input type="number" id="landing-num-rounds" min="3" max="7" value="5">
+      </div>
+    </div>
+    <div class="form-group">
+      <label for="landing-start-capital">Starting capital ($)</label>
+      <input type="number" id="landing-start-capital" min="200" max="5000" step="50" value="1000">
+    </div>
+    <fieldset class="regime-toggle-fieldset" style="margin-top:0.5rem;">
+      <legend>Regimes after free market</legend>
+      <label class="checkbox-inline"><input type="checkbox" id="landing-regime-cac" checked> Command &amp; Control</label>
+      <label class="checkbox-inline"><input type="checkbox" id="landing-regime-tax" checked> Carbon Tax</label>
+      <label class="checkbox-inline"><input type="checkbox" id="landing-regime-trade" checked> Cap</label>
+      <label class="checkbox-inline"><input type="checkbox" id="landing-regime-trademarket" checked> Cap &amp; Trade</label>
+    </fieldset>
+    <label class="checkbox-inline" style="margin-top:0.5rem;">
+      <input type="checkbox" id="landing-offset-auction"> Enable offset auction (Cap &amp; Trade)
+    </label>
+  </details>
 
   <div class="card" id="landing">
     <h2>Welcome</h2>
     <p style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:1.25rem;">
-      This game lets students experience five regulatory approaches to carbon emissions
-      &mdash; from free markets to cap &amp; trade &mdash; and discover why each produces
+      This game lets students experience several regulatory approaches to carbon emissions
+      &mdash; from free markets to cap and trade &mdash; and discover why each produces
       different outcomes.
     </p>
 
@@ -61,7 +94,7 @@
     </div>
   </div>
 
-</div>
+</main>
 
 <footer class="attribution">
   Adapted from <em>The Thingamabob Game</em> (Bigelow 2009),
@@ -75,7 +108,25 @@
 <script type="module">
 import { generateRoomCode } from './js/ui-helpers.js';
 import { createRoom, roomExists, joinRoom } from './js/firebase-sync.js';
-import { buildConfig, createInitialState } from './js/game-engine.js';
+import { buildConfig, createInitialState, OPTIONAL_REGIMES } from './js/game-engine.js';
+
+function gatherLandingConfig() {
+  const numFirms = Math.max(3, Math.min(8, parseInt(document.getElementById('landing-num-firms')?.value, 10) || 5));
+  const numRounds = Math.max(3, Math.min(7, parseInt(document.getElementById('landing-num-rounds')?.value, 10) || 5));
+  const startCapital = Math.max(200, Math.min(5000, parseInt(document.getElementById('landing-start-capital')?.value, 10) || 1000));
+  const enabled = [];
+  for (const r of OPTIONAL_REGIMES) {
+    if (document.getElementById(`landing-regime-${r}`)?.checked) enabled.push(r);
+  }
+  const offsetAuctionEnabled = !!document.getElementById('landing-offset-auction')?.checked;
+  return buildConfig({
+    numFirms,
+    numRounds,
+    startCapital,
+    enabledRegimes: enabled,
+    offsetAuctionEnabled,
+  });
+}
 
 const params = new URLSearchParams(window.location.search);
 const presetRoom = params.get('room');
@@ -91,7 +142,7 @@ window.createNewRoom = async function() {
     let code = generateRoomCode();
     let tries = 0;
     while (await roomExists(code) && tries < 10) { code = generateRoomCode(); tries++; }
-    const config = buildConfig();
+    const config = gatherLandingConfig();
     const state = createInitialState(config);
     await createRoom(code, state);
     window.location.href = `host.html?room=${code}`;

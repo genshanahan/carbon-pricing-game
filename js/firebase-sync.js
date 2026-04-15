@@ -151,13 +151,17 @@ export async function claimCleanTech(roomCode, regime, firmId, maxSlots) {
   return new Promise((resolve, reject) => {
     ref.transaction(
       (current) => {
+        console.log(`[FB] claimCleanTech transaction update: current=`, JSON.stringify(current));
         const c = normalizeCleantechClaims(current);
         const k = String(firmId);
-        if (c[k]) return c;
-        if (Object.keys(c).length >= cap) return undefined;
-        return { ...c, [k]: true };
+        if (c[k]) { console.log(`[FB] already claimed`); return c; }
+        if (Object.keys(c).length >= cap) { console.log(`[FB] slots full`); return undefined; }
+        const next = { ...c, [k]: true };
+        console.log(`[FB] claiming, returning`, JSON.stringify(next));
+        return next;
       },
-      (error, committed) => {
+      (error, committed, snapshot) => {
+        console.log(`[FB] claimCleanTech complete: error=`, error, `committed=`, committed, `snapshot=`, snapshot?.val());
         if (error) reject(error);
         else resolve({ ok: !!committed });
       },

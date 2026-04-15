@@ -73,6 +73,7 @@ function syncCleanTechStudentListener() {
   cleantechStudentKey = key;
   if (!want) return;
   cleantechStudentUnsub = onCleanTechClaims(ROOM, r, claims => {
+    console.log(`[STUDENT] onCleanTechClaims for ${r}:`, JSON.stringify(claims));
     cleantechRemoteByRegime[r] = claims && typeof claims === 'object' ? claims : {};
     render();
   });
@@ -699,7 +700,9 @@ window.playApp = {
     if (!state) return;
     const maxSlots = Math.max(1, Math.min(100, Number(state.config.maxCleanTech) || 3));
     try {
+      console.log(`[STUDENT] tryClaimCleanTech: calling claimCleanTech(${ROOM}, ${regime}, ${FIRM_ID}, ${maxSlots})`);
       const { ok } = await claimCleanTech(ROOM, regime, FIRM_ID, maxSlots);
+      console.log(`[STUDENT] tryClaimCleanTech: result ok=${ok}`);
       if (!ok) {
         alert('All clean-tech slots are full. Another firm may have claimed just before you.');
       } else {

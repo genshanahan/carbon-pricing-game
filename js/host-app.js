@@ -132,11 +132,19 @@ async function sync() {
 
 function renderNav() {
   if (!state) return;
+  const navFree = !!state.facilitatorNavUnlocked;
+  const jumpOptions = [
+    ['', 'Skip to\u2026'],
+    ['setup', 'Setup'],
+    ...REGIMES.map(r => [r, REGIME_NAV_LABELS[r]]),
+    ['results', 'Results'],
+  ].map(([val, label]) => `<option value="${val}">${label}</option>`).join('');
   navEl.innerHTML = `
+    <div class="regime-nav-row">
     <button class="regime-btn ${state.regime === 'setup' ? 'active' : ''} ${state.completedRegimes.includes('setup') ? 'completed' : ''}"
             onclick="window.hostApp.switchRegime('setup')">Setup</button>
     ${REGIMES.map(r => {
-      const visible = state.completedRegimes.includes(getPrevRegime(r)) || state.regime === r || state.completedRegimes.includes(r);
+      const visible = navFree || state.completedRegimes.includes(getPrevRegime(r)) || state.regime === r || state.completedRegimes.includes(r);
       const active = state.regime === r;
       const completed = state.completedRegimes.includes(r);
       return `<button class="regime-btn ${active ? 'active' : ''} ${completed ? 'completed' : ''} ${!visible ? 'locked' : ''}"
@@ -145,6 +153,21 @@ function renderNav() {
     }).join('')}
     <button class="regime-btn ${state.regime === 'results' ? 'active' : ''}"
             onclick="window.hostApp.switchRegime('results')">Results</button>
+    </div>
+    <div class="facilitator-nav-tools" style="margin-top:0.45rem;padding-top:0.45rem;border-top:1px solid var(--border, #d4e6f1);display:flex;flex-wrap:wrap;align-items:center;gap:0.65rem 1rem;font-size:0.82rem;color:var(--text-secondary);">
+      <label style="display:inline-flex;align-items:center;gap:0.35rem;cursor:pointer;">
+        <input type="checkbox" ${navFree ? 'checked' : ''} onchange="window.hostApp.setFacilitatorNavUnlocked(this.checked)">
+        <span>Unlock all regime tabs</span>
+      </label>
+      <span style="opacity:0.45;">|</span>
+      <label style="display:inline-flex;align-items:center;gap:0.35rem;">
+        <span>Jump</span>
+        <select class="host-jump-select" title="Go straight to a screen (e.g. resume next week or test one regime)"
+                onchange="if(this.value) window.hostApp.jumpToRegime(this.value)">
+          ${jumpOptions}
+        </select>
+      </label>
+    </div>
   `;
 }
 
@@ -172,6 +195,22 @@ window.hostApp = {
       state.regimeData[regime] = initRegimeData(state.config);
     }
     listenForSubmissions();
+    sync();
+  },
+
+  /** Jump to setup, any regulatory regime, or results (same as choosing a tab once it is unlocked). */
+  jumpToRegime(regime) {
+    if (!state) return;
+    if (regime !== 'setup' && regime !== 'results' && !REGIMES.includes(regime)) return;
+    window.hostApp.switchRegime(regime);
+    const sel = document.querySelector('.host-jump-select');
+    if (sel) sel.value = '';
+  },
+
+  setFacilitatorNavUnlocked(unlocked) {
+    if (!state) return;
+    state.facilitatorNavUnlocked = !!unlocked;
+    renderNav();
     sync();
   },
 

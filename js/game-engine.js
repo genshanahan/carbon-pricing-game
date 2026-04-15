@@ -53,6 +53,8 @@ export function createInitialState(config) {
     firms: createDefaultFirms(config.numFirms),
     completedRegimes: [],
     regimeData: {},
+    /** When true, facilitator can open any regime tab (multi-session resume / testing). */
+    facilitatorNavUnlocked: false,
   };
 }
 
@@ -73,6 +75,7 @@ export function normalizeStateFromRemote(s) {
   if (!o.regimeData || typeof o.regimeData !== 'object') o.regimeData = {};
   if (!Array.isArray(o.firms)) o.firms = [];
   if (!o.regime) o.regime = 'setup';
+  if (typeof o.facilitatorNavUnlocked !== 'boolean') o.facilitatorNavUnlocked = false;
   if (!o.config || typeof o.config !== 'object') o.config = {};
   const mergedCfg = { ...DEFAULTS, ...o.config };
   for (const key of Object.keys(o.regimeData)) {

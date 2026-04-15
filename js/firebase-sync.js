@@ -175,6 +175,14 @@ export function onCleanTechClaims(roomCode, regime, callback) {
   return () => ref.off('value');
 }
 
+/** One-shot read of `cleantech/{regime}` (keeps host cache aligned if claims happened while the listener was off). */
+export async function fetchCleantechClaims(roomCode, regime) {
+  ensureInit();
+  const snap = await roomRef(roomCode).child(`cleantech/${regime}`).once('value');
+  if (!snap.exists()) return {};
+  return normalizeCleantechClaims(snap.val());
+}
+
 /* ── Student connection tracking ── */
 
 export async function registerStudent(roomCode, firmId) {

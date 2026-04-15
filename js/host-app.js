@@ -13,7 +13,7 @@ import {
 import {
   pushState, onStateChange, onSubmissions, clearSubmissions,
   onStudentConnections, deleteRoom, onProposals,
-  mirrorCleanTechClaim, onCleanTechClaims,
+  mirrorCleanTechClaim, onCleanTechClaims, fetchCleantechClaims,
 } from './firebase-sync.js';
 
 import {
@@ -41,20 +41,20 @@ let cleantechUnsub = null;
 let cleantechKey = null;
 /** Latest `cleantech/{regime}` map per regime (RTDB is source of truth during the claim window). */
 const cleantechClaimsByRegime = {};
+let cleantechRefreshSeq = 0;
 
 /**
- * Merge cached cleantech claims into in-memory `state` for the active regime.
+ * Merge cached cleantech claims into `state.regimeData[regimeKey]` when that regime is on screen.
  * Re-applies after every `onStateChange` so a stale `state` snapshot cannot erase
  * flags that were set from `cleantech/` before `sync()` finished (overlapping writes).
  * @returns {boolean} whether any firm’s `cleanTech` changed
  */
-function applyCleantechFromCacheForCurrentRegime() {
-  if (!state) return false;
-  const r = state.regime;
-  const claims = cleantechClaimsByRegime[r];
-  if (!claims || typeof claims !== 'object') return false;
-  const rd = state.regimeData[r];
-  if (!regimeUsesCleanTech(r) || !rd || rd.currentRound !== 0 || rd.rounds.length > 0) return false;
+function applyCleantechFromCacheForRegime(regimeKey) {
+  if (!state || state.regime !== regimeKey) return false;
+  const claims = cleantechClaimsByRegime[regimeKey];
+  if (claims == null || typeof claims !== 'object' || Array.isArray(claims)) return false;
+  const rd = state.regimeData[regimeKey];
+  if (!regimeUsesCleanTech(regimeKey) || !rd || rd.currentRound !== 0 || rd.rounds.length > 0) return false;
   let changed = false;
   const n = state.config.numFirms;
   for (let i = 0; i < n; i++) {
@@ -67,6 +67,34 @@ function applyCleantechFromCacheForCurrentRegime() {
     }
   }
   return changed;
+}
+
+function applyCleantechFromCacheForCurrentRegime() {
+  if (!state) return false;
+  return applyCleantechFromCacheForRegime(state.regime);
+}
+
+/** Pull `cleantech/{regime}` from RTDB into the cache and merge (covers claims while listener was unsubscribed). */
+async function refreshCleantechFromServer() {
+  if (!state) return;
+  const r = state.regime;
+  if (!REGIMES.includes(r) || !regimeUsesCleanTech(r)) return;
+  const rd = state.regimeData[r];
+  if (!rd || rd.currentRound !== 0 || rd.rounds.length > 0) return;
+  const seq = ++cleantechRefreshSeq;
+  try {
+    const claims = await fetchCleantechClaims(ROOM, r);
+    if (seq !== cleantechRefreshSeq) return;
+    cleantechClaimsByRegime[r] = claims;
+    if (!state || state.regime !== r) return;
+    if (applyCleantechFromCacheForRegime(r)) {
+      await sync();
+    }
+    if (!state || state.regime !== r) return;
+    render();
+  } catch (e) {
+    console.error('[HOST] refreshCleantechFromServer', e);
+  }
 }
 
 const content = document.getElementById('content');
@@ -113,6 +141,7 @@ export async function init() {
       if (applyCleantechFromCacheForCurrentRegime()) {
         sync().catch(e => console.error('[HOST] sync after re-applying cleantech cache', e));
       }
+      void refreshCleantechFromServer();
       render();
     } catch (err) {
       console.error(err);
@@ -345,9 +374,9 @@ function listenForCleanTechClaims() {
   if (cleantechUnsub) { cleantechUnsub(); cleantechUnsub = null; }
   cleantechKey = regime;
   cleantechUnsub = onCleanTechClaims(ROOM, regime, claims => {
-    cleantechClaimsByRegime[regime] = claims && typeof claims === 'object' ? claims : {};
+    cleantechClaimsByRegime[regime] = claims && typeof claims === 'object' && !Array.isArray(claims) ? claims : {};
     if (!state || state.regime !== regime || !state.regimeData[regime]) return;
-    const changed = applyCleantechFromCacheForCurrentRegime();
+    const changed = applyCleantechFromCacheForRegime(regime);
     if (changed) {
       sync().catch(e => console.error('[HOST] sync after cleantech claims update', e));
     }

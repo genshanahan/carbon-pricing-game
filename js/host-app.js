@@ -31,6 +31,7 @@ let state = null;
 let studentConnections = {};
 let currentSubmissions = {};
 let submissionUnsub = null;
+let submissionKey = null;  // tracks which regime_round the listener is bound to
 
 const content = document.getElementById('content');
 const navEl = document.getElementById('regimeNav');
@@ -67,6 +68,10 @@ export async function init() {
       }
       state.config = buildConfig(state.config);
       renderNav();
+      /* Re-bind after every state push (e.g. processed round): `currentRound` moves
+         but submission listener was only set on tab change — otherwise the host
+         stays subscribed to the previous round's Firebase path. */
+      listenForSubmissions();
       render();
     } catch (err) {
       console.error(err);
@@ -152,10 +157,16 @@ window.hostApp = {
       let val = el ? parseInt(el.value) || 0 : (fromSubmission ? fromSubmission.quantity : 0);
       production.push(val);
     }
+    const prevRound = state.regimeData[regime].currentRound;
     processRound(state, regime, production);
-    await clearSubmissions(ROOM, regime, state.regimeData[regime].currentRound - 1);
+    const newRound = state.regimeData[regime].currentRound;
+    console.log(`[HOST] submitRound: processed ${regime} round ${prevRound} → now ${newRound}`);
+    await clearSubmissions(ROOM, regime, prevRound);
+    console.log(`[HOST] submitRound: cleared submissions for ${regime}_${prevRound}`);
     currentSubmissions = {};
+    submissionKey = null;
     sync();
+    console.log(`[HOST] submitRound: synced, submissionKey reset — listenForSubmissions will rebind on next onStateChange`);
   },
 
   completeAndAdvance(regime, next) {
@@ -198,11 +209,26 @@ window.hostApp = {
 /* ── Submission listener ── */
 
 function listenForSubmissions() {
-  if (submissionUnsub) submissionUnsub();
-  if (!state || !REGIMES.includes(state.regime)) return;
+  if (!state || !REGIMES.includes(state.regime)) {
+    if (submissionUnsub) { submissionUnsub(); submissionUnsub = null; submissionKey = null; }
+    return;
+  }
   const d = state.regimeData[state.regime];
-  if (!d || d.currentRound >= state.config.numRounds) return;
+  if (!d || d.currentRound >= state.config.numRounds) {
+    if (submissionUnsub) { submissionUnsub(); submissionUnsub = null; submissionKey = null; }
+    return;
+  }
+  const wantKey = `${state.regime}_${d.currentRound}`;
+  if (wantKey === submissionKey) {
+    console.log(`[HOST] listenForSubmissions: already on ${wantKey}, skipping`);
+    return;
+  }
+  console.log(`[HOST] listenForSubmissions: switching ${submissionKey} → ${wantKey}`);
+  if (submissionUnsub) { submissionUnsub(); submissionUnsub = null; }
+  submissionKey = wantKey;
+  currentSubmissions = {};
   submissionUnsub = onSubmissions(ROOM, state.regime, d.currentRound, subs => {
+    console.log(`[HOST] onSubmissions callback for ${wantKey}:`, JSON.stringify(subs));
     currentSubmissions = subs;
     render();
   });

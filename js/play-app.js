@@ -34,6 +34,8 @@ async function init() {
       return;
     }
     state.config = buildConfig(state.config);
+    const rd = state.regimeData[state.regime];
+    console.log(`[STUDENT] onStateChange: regime=${state.regime}, currentRound=${rd ? rd.currentRound : 'N/A'}`);
     render();
   });
 }
@@ -355,11 +357,14 @@ window.playApp = {
     if (qty < 0) qty = 0;
     if (qty > maxAllowed) qty = maxAllowed;
 
+    console.log(`[STUDENT] submitProd: writing to ${regime}_${round}/${FIRM_ID}, qty=${qty}`);
     try {
       await submitDecision(ROOM, regime, round, FIRM_ID, qty);
+      console.log(`[STUDENT] submitProd: write succeeded`);
       hasSubmitted[`${regime}_${round}`] = qty;
       render();
     } catch (e) {
+      console.error(`[STUDENT] submitProd: write FAILED`, e);
       alert('Could not submit. Check your connection.\n\n' + e.message);
     }
   },

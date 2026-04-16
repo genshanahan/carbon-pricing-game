@@ -72,14 +72,17 @@ export function aiCleanTechDecisions(config, regime, regimeData, playerFirmIndex
 
 /**
  * NPV check: is clean-tech profitable over N remaining rounds?
- * Compares total profit with clean-tech vs standard across all rounds,
- * assuming max production each round with compounding capital.
+ * Compares total profit (including the sunk investment) with clean-tech
+ * vs standard across all rounds, assuming max production each round with
+ * compounding capital.
  */
 function cleanTechNpvPositive(firmData, config, regime, roundsRemaining) {
-  let capitalClean = firmData.capital;
+  let capitalClean = firmData.capital - config.cleanTechCost;
   let capitalStd = firmData.capital;
-  let totalClean = 0;
+  let totalClean = -config.cleanTechCost;
   let totalStd = 0;
+
+  if (capitalClean < 0) return false;
 
   for (let r = 0; r < roundsRemaining; r++) {
     const prodStd = Math.floor(capitalStd / config.costPerUnit);
@@ -99,22 +102,32 @@ function cleanTechNpvPositive(firmData, config, regime, roundsRemaining) {
 /* ── Permit trade reservation prices ── */
 
 /**
- * Compute the reservation price for an AI firm (the minimum price at which
- * it would sell a permit, or equivalently the value of using that permit).
+ * Compute the reservation price for an AI firm — the minimum price at which
+ * it would sell a permit, or equivalently the maximum it would pay to buy one.
  *
- * Aggressive firms add a 20% markup; strategic firms trade at fair value.
+ * With the sunk-cost clean-tech model, a firm with slack permits (more permits
+ * than it can use given its capital) values the marginal permit at $0 — it
+ * would sell for any positive price. A permit-constrained firm values the
+ * marginal permit at the gross production profit it enables.
+ *
+ * Aggressive firms add a 20 % markup when permit-constrained.
  */
 export function aiReservationPrice(firmIndex, firmData, config, regime) {
-  const upp = unitsPerPermit(firmData);
-  const setup = firmData.cleanTech ? config.cleanTechCost : 0;
-  const gross = upp * config.profitPerUnit;
-  const fairValue = Math.max(0, gross - setup);
+  const remaining = permitsRemaining(firmData);
+  const afford = maxAffordable(firmData, config);
 
+  if (remaining > 0 && afford <= 0) return 0;
+
+  const upp = unitsPerPermit(firmData);
+  const canProduceFromPermits = remaining * upp;
+  if (canProduceFromPermits > afford) return 0;
+
+  const grossPermitValue = upp * config.profitPerUnit;
   const personality = getPersonality(firmIndex);
   if (personality === 'aggressive') {
-    return Math.round(fairValue * 1.2);
+    return Math.round(grossPermitValue * 1.2);
   }
-  return fairValue;
+  return grossPermitValue;
 }
 
 /**

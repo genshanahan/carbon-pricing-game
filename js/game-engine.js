@@ -14,8 +14,6 @@ export const DEFAULTS = {
   taxRate: 0.80,
   /** Subset of {@link OPTIONAL_REGIMES} in canonical order (free market is always first). */
   enabledRegimes: ['cac', 'tax', 'trade', 'trademarket'],
-  /** When true, facilitator can inject extra permits mid-session in Cap & Trade. */
-  offsetAuctionEnabled: false,
 };
 
 /**
@@ -24,9 +22,29 @@ export const DEFAULTS = {
  * **startCapital** — Set so that unconstrained free-market production triggers
  * catastrophe at roughly 60 % of the way through the regime (e.g. round 3 of 5).
  *
- * **cleanTechCost** — 45 % of startCapital: clean-tech firms reliably earn less
- * than standard firms in rounds 1–2 of the Carbon Tax regime, prompting the
- * fairness discussion, then overtake in round 3+.
+ * **cleanTechCost** — Sunk, one-off investment deducted at the moment a firm
+ * chooses clean technology (before any production). Set at 60 % of startCapital
+ * so that in the Carbon Tax regime clean-tech firms are visibly behind in
+ * rounds 1–3, then overtake standard firms from round 4. In Cap / Cap & Trade,
+ * the sunk cost makes clean-tech firms capital-constrained, leaving them with
+ * slack permits to sell to permit-constrained standard firms — delivering the
+ * neoclassical efficiency-of-trade result.
+ *
+ * Default arithmetic (5 firms, 5 rounds, startCapital $1,000, verified numerically):
+ *   cleanTechCost = $600. After investment, clean-tech starts with $400 of
+ *   working capital vs. $1,000 for standard firms.
+ *   Tax (greedy): cumulative profit clean < standard through R3 (R1: −$560,
+ *     R2: −$416, R3: −$90), clean overtakes at R4 (+$548), wide lead at R5
+ *     (+$1,706). Delivers the "short-term pain, long-term gain" narrative.
+ *   Cap (greedy): standard firms exhaust their 7-permit allocation by R3;
+ *     clean-tech firms end R5 with ~0.8 permits unused (capital-constrained,
+ *     not permit-constrained).
+ *   Cap & Trade: clean-tech firms remain capital-constrained throughout, so
+ *     their reservation price for surplus permits is $0. Standard firms
+ *     become permit-constrained from R3–R4 and are willing to pay up to the
+ *     gross permit value (1 permit × 1,000 units × $1/unit = $1,000; $1,200
+ *     with aggressive-AI 20 % premium). Equilibrium trading price lands
+ *     between these two anchors.
  *
  * **maxCleanTech** — ~40 % of firms (at least 1): enough for heterogeneity
  * without making clean tech the majority.
@@ -45,7 +63,7 @@ export function deriveSessionParams(numFirms, numRounds, opts = {}) {
     (numFirms * (Math.pow(2, targetRound) - 1) * ppmPer1000);
   const startCapital = Math.ceil(exactC / 50) * 50;
 
-  const cleanTechCost = Math.round(startCapital * 0.45);
+  const cleanTechCost = Math.round(startCapital * 0.60);
   const maxCleanTech = Math.max(1, Math.floor(numFirms * 0.4));
 
   const maxThingamabobs = (ppmBudget / ppmPer1000) * 1000;
@@ -116,8 +134,6 @@ export function buildConfig(overrides = {}) {
   c.enabledRegimes = normaliseEnabledRegimes(c.enabledRegimes);
   c.numFirms = Math.max(3, Math.min(8, Math.round(Number(c.numFirms) || DEFAULTS.numFirms)));
   c.numRounds = Math.max(3, Math.min(7, Math.round(Number(c.numRounds) || DEFAULTS.numRounds)));
-  c.offsetAuctionEnabled = !!c.offsetAuctionEnabled;
-
   const derived = deriveSessionParams(c.numFirms, c.numRounds, c);
   c.startCapital  = derived.startCapital;
   c.cleanTechCost = derived.cleanTechCost;
@@ -220,6 +236,7 @@ export function initRegimeData(config, existingData) {
       totalProduced: 0,
       totalProfit: 0,
       cleanTech: false,
+      cleanTechInvestment: 0,
       permits: 0,
     })),
     ppm: config.startPpm,
@@ -227,7 +244,6 @@ export function initRegimeData(config, existingData) {
     totalTaxRevenue: 0,
     trades: [],
     debriefActive: false,
-    offsetInjectLog: [],
   };
 }
 
@@ -243,7 +259,12 @@ export function normalizeRegimeDatum(rd, config) {
   const firms = Array.from({ length: num }, (_, i) => {
     const b = base.firms[i];
     const f = Array.isArray(rd.firms) ? rd.firms[i] : null;
-    return f && typeof f === 'object' ? { ...b, ...f } : b;
+    if (!f || typeof f !== 'object') return b;
+    const merged = { ...b, ...f };
+    if (typeof merged.cleanTechInvestment !== 'number' || !isFinite(merged.cleanTechInvestment)) {
+      merged.cleanTechInvestment = merged.cleanTech ? (config.cleanTechCost || 0) : 0;
+    }
+    return merged;
   });
 
   const rounds = Array.isArray(rd.rounds)
@@ -260,7 +281,6 @@ export function normalizeRegimeDatum(rd, config) {
     totalTaxRevenue: typeof rd.totalTaxRevenue === 'number' ? rd.totalTaxRevenue : 0,
     trades: Array.isArray(rd.trades) ? rd.trades : [],
     debriefActive: typeof rd.debriefActive === 'boolean' ? rd.debriefActive : false,
-    offsetInjectLog: Array.isArray(rd.offsetInjectLog) ? rd.offsetInjectLog : [],
   };
 }
 
@@ -327,6 +347,36 @@ export function maxAllowedProduction(firmData, config, regime) {
   return cap;
 }
 
+/**
+ * Invest in clean technology: deducts cleanTechCost from capital immediately.
+ * Must be called before any production round in the regime.
+ * Returns { ok: true } on success, or { error: string } on failure.
+ */
+export function setCleanTech(state, regime, firmIndex) {
+  const config = state.config;
+  const d = state.regimeData[regime];
+  if (!d) return { error: 'No regime data.' };
+  if (d.currentRound > 0 || d.rounds.length > 0) {
+    return { error: 'Clean-tech investment must happen before production begins.' };
+  }
+  const fd = d.firms[firmIndex];
+  if (fd.cleanTech) return { error: 'Already invested in clean technology.' };
+
+  const slotsUsed = d.firms.filter(f => f.cleanTech).length;
+  if (slotsUsed >= (config.maxCleanTech || 2)) {
+    return { error: 'All clean-tech slots are taken.' };
+  }
+  if (fd.capital < config.cleanTechCost) {
+    return { error: `Not enough capital (need ${config.cleanTechCost}, have ${fd.capital}).` };
+  }
+
+  fd.cleanTech = true;
+  fd.cleanTechInvestment = config.cleanTechCost;
+  fd.capital -= config.cleanTechCost;
+  fd.totalProfit -= config.cleanTechCost;
+  return { ok: true };
+}
+
 /** Total carbon tax paid by one firm across all completed rounds in a regime. */
 export function totalTaxPaidByFirm(d, firmIndex, config) {
   const fd = d.firms[firmIndex];
@@ -349,16 +399,12 @@ export function roundProfitDetailForFirm(regime, config, fd, productionQty) {
   const cost = p * config.costPerUnit;
   const revenue = p * config.revenuePerUnit;
   let tax = 0;
-  let setup = 0;
   if (regime === 'tax') {
     const rate = fd.cleanTech ? config.taxRate / 2 : config.taxRate;
     tax = p * rate;
   }
-  if ((regime === 'tax' || regime === 'trade' || regime === 'trademarket') && fd.cleanTech && p > 0) {
-    setup = config.cleanTechCost;
-  }
-  const profit = revenue - cost - tax - setup;
-  return { p, cost, revenue, tax, setup, profit };
+  const profit = revenue - cost - tax;
+  return { p, cost, revenue, tax, profit };
 }
 
 export function defaultPermitsPerFirm(config) {
@@ -401,21 +447,17 @@ export function processRound(state, regime, production) {
     const cost = p * config.costPerUnit;
     const revenue = p * config.revenuePerUnit;
     let tax = 0;
-    let cleanSetup = 0;
 
-    if ((isTax || isTrade) && fd.cleanTech) {
-      cleanSetup = config.cleanTechCost;
-    }
     if (isTax) {
       const effectiveRate = fd.cleanTech ? config.taxRate / 2 : config.taxRate;
       tax = p * effectiveRate;
       roundTaxRevenue += tax;
     }
 
-    const profit = revenue - cost - tax - cleanSetup;
+    const profit = revenue - cost - tax;
     capitalStart.push(capitalBefore);
     roundProfitByFirm.push(profit);
-    fd.capital = fd.capital - cost + revenue - tax - cleanSetup;
+    fd.capital = fd.capital - cost + revenue - tax;
     fd.totalProduced += p;
     fd.totalProfit += profit;
 
@@ -445,27 +487,6 @@ export function processRound(state, regime, production) {
 }
 
 /* ── Permit trading ── */
-
-/**
- * Add the same number of extra permits to every firm (offset auction twist).
- * Only for Cap & Trade; intended mid-round while rounds remain.
- */
-export function injectOffsetPermits(state, regime, perFirm) {
-  const d = state.regimeData[regime];
-  if (!d || regime !== 'trademarket') {
-    return { error: 'Extra permits can only be added during Cap & Trade.' };
-  }
-  const n = Math.floor(Number(perFirm));
-  if (!Number.isFinite(n) || n <= 0) {
-    return { error: 'Enter a whole number of one or more extra permits per firm.' };
-  }
-  for (let i = 0; i < state.config.numFirms; i++) {
-    d.firms[i].permits += n;
-  }
-  if (!Array.isArray(d.offsetInjectLog)) d.offsetInjectLog = [];
-  d.offsetInjectLog.push({ perFirm: n, roundIndex: d.currentRound });
-  return { ok: true };
-}
 
 export function processPermitTrade(state, regime, seller, buyer, qty, price) {
   const d = state.regimeData[regime];
@@ -541,7 +562,6 @@ export function undoLastRound(state, regime) {
   d.currentRound--;
 
   const isTax = regime === 'tax';
-  const isTrade = regime === 'trade' || regime === 'trademarket';
 
   let roundPpmRemoved = 0;
   let roundTaxRemoved = 0;
@@ -552,19 +572,15 @@ export function undoLastRound(state, regime) {
     const cost = p * state.config.costPerUnit;
     const revenue = p * state.config.revenuePerUnit;
     let tax = 0;
-    let cleanSetup = 0;
 
-    if ((isTax || isTrade) && fd.cleanTech) {
-      cleanSetup = state.config.cleanTechCost;
-    }
     if (isTax) {
       const effectiveRate = fd.cleanTech ? state.config.taxRate / 2 : state.config.taxRate;
       tax = p * effectiveRate;
       roundTaxRemoved += tax;
     }
 
-    const profit = revenue - cost - tax - cleanSetup;
-    fd.capital = fd.capital + cost - revenue + tax + cleanSetup;
+    const profit = revenue - cost - tax;
+    fd.capital = fd.capital + cost - revenue + tax;
     fd.totalProduced -= p;
     fd.totalProfit -= profit;
 

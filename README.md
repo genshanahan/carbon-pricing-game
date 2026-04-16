@@ -117,7 +117,7 @@ The app is entirely static files - no build step, no server. Deploy to any stati
 You must `cd` into **this** folder — the one that contains `index.html` (named `v2` inside *Extended Thingamabob Game*). If your terminal starts in the AIS workspace root, use:
 
 ```bash
-cd "2-Live/8-Teaching/Lesson plans/BST462 2026/Extended Thingamabob Game/v2"
+cd "Documents/Carbon-Pricing-Game V2/GitHub/carbon-pricing-game"
 python3 -m http.server 8000
 ```
 

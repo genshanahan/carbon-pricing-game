@@ -9,7 +9,7 @@ import {
   maxAllowedProduction, maxAffordable, unitsPerPermit, permitsRemaining,
   maxProductionFromPermits, normalizeStateFromRemote, totalTaxPaidByFirm,
   regimeSequence, nextRegimeAfter, previousRegimeInSession, resizeFirmsList,
-  injectOffsetPermits, OPTIONAL_REGIMES, deriveSessionParams,
+  setCleanTech, OPTIONAL_REGIMES, deriveSessionParams,
 } from './game-engine.js';
 
 import {
@@ -331,7 +331,18 @@ window.hostApp = {
   },
 
   async setCleanTech(regime, i, val) {
-    state.regimeData[regime].firms[i].cleanTech = val;
+    if (val) {
+      const result = setCleanTech(state, regime, i);
+      if (result.error) { alert(result.error); return; }
+    } else {
+      const fd = state.regimeData[regime].firms[i];
+      if (fd.cleanTech) {
+        fd.capital += fd.cleanTechInvestment;
+        fd.totalProfit += fd.cleanTechInvestment;
+        fd.cleanTechInvestment = 0;
+        fd.cleanTech = false;
+      }
+    }
     cleantechClaimsByRegime[regime] = cleantechClaimsByRegime[regime] || {};
     if (val) cleantechClaimsByRegime[regime][String(i)] = true;
     else delete cleantechClaimsByRegime[regime][String(i)];
@@ -462,24 +473,14 @@ window.hostApp = {
       const el = document.getElementById(`cfg-regime-${r}`);
       if (el && el.checked) enabled.push(r);
     }
-    const offsetAuctionEnabled = !!document.getElementById('cfg-offset-auction')?.checked;
     const nextCfg = buildConfig({
       ...state.config,
       numFirms,
       numRounds,
       enabledRegimes: enabled,
-      offsetAuctionEnabled,
     });
     state.config = nextCfg;
     state.firms = resizeFirmsList(state.firms, numFirms);
-    sync();
-  },
-
-  injectOffsetAuction(regime) {
-    if (!state) return;
-    const per = parseInt(document.getElementById('offset-permits-per-firm')?.value, 10) || 1;
-    const res = injectOffsetPermits(state, regime, per);
-    if (res.error) { alert(res.error); return; }
     sync();
   },
 
@@ -505,7 +506,10 @@ function bakeCleanTechIntoState(regime) {
   if (!rd) return;
   const n = state.config.numFirms;
   for (let i = 0; i < n; i++) {
-    rd.firms[i].cleanTech = firmHasCleanTech(regime, i);
+    const shouldHave = firmHasCleanTech(regime, i);
+    if (shouldHave && !rd.firms[i].cleanTech) {
+      setCleanTech(state, regime, i);
+    }
   }
 }
 
@@ -625,8 +629,8 @@ function renderSetup() {
         <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.35rem;margin-top:0.15rem;">Set so free-market growth triggers catastrophe before the final round</div>
         <div class="stat-row" style="border-bottom:1px solid rgba(0,0,0,0.06);"><span class="stat-label">Clean tech slots</span><span class="stat-value">${derived.maxCleanTech} of ${state.config.numFirms} firms</span></div>
         <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.35rem;margin-top:0.15rem;">Maintains firm heterogeneity for Carbon Tax and Cap regimes</div>
-        <div class="stat-row" style="border-bottom:1px solid rgba(0,0,0,0.06);"><span class="stat-label">Clean tech setup cost</span><span class="stat-value">${fmtMoney(derived.cleanTechCost)}/round</span></div>
-        <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.35rem;margin-top:0.15rem;">Clean firms earn less in rounds 1\u20132 of the Carbon Tax (fairness lesson), then overtake</div>
+        <div class="stat-row" style="border-bottom:1px solid rgba(0,0,0,0.06);"><span class="stat-label">Clean tech investment (sunk)</span><span class="stat-value">${fmtMoney(derived.cleanTechCost)} one-off</span></div>
+        <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.35rem;margin-top:0.15rem;">Deducted from capital when chosen; clean firms start behind but catch up via halved tax/emissions</div>
         <div class="stat-row"><span class="stat-label">Permits per firm (Cap regimes)</span><span class="stat-value">${derived.permitsPerFirm}</span></div>
         <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:0.15rem;">Ensures permits actually constrain production below free-market levels</div>
       </div>
@@ -657,12 +661,6 @@ function renderSetup() {
           <label class="checkbox-inline"><input type="checkbox" id="cfg-regime-${r}" value="${r}"
             ${state.config.enabledRegimes.includes(r) ? 'checked' : ''}> ${REGIME_LABELS[r]}</label>`).join('')}
       </fieldset>
-      <div class="form-group" style="margin-top:0.75rem;">
-        <label class="checkbox-inline">
-          <input type="checkbox" id="cfg-offset-auction" ${state.config.offsetAuctionEnabled ? 'checked' : ''}>
-          Enable offset auction (extra permits in Cap &amp; Trade)
-        </label>
-      </div>
       <button type="button" class="btn btn-outline btn-block" onclick="window.hostApp.applySessionConfig()">
         Apply session options
       </button>
@@ -673,7 +671,6 @@ function renderSetup() {
       <p style="font-size:0.88rem;color:var(--text-secondary);">
         ${state.config.numFirms} firms, ${state.config.numRounds} rounds per regime, starting capital ${fmtMoney(state.config.startCapital)}.
         Regimes: ${seq.map(r => REGIME_LABELS[r]).join(' \u2192 ')}.
-        ${state.config.offsetAuctionEnabled ? 'Offset auction is enabled for Cap &amp; Trade.' : ''}
       </p>
       ${derivedSummary}
     </div>`;
@@ -827,7 +824,7 @@ function renderCleanTechAssignment(regime, d) {
       <h3>Clean Technology Assignment</h3>
       <p style="font-size:0.88rem;color:var(--text-secondary);margin-bottom:0.6rem;">
         Up to <strong>${maxSlots}</strong> firms may have clean production technology (first-come on student devices, or assign here).
-        Halves emissions per unit; costs ${fmtMoney(state.config.cleanTechCost)} setup per round when producing.
+        Halves emissions per unit; requires a one-off investment of ${fmtMoney(state.config.cleanTechCost)} deducted from capital immediately.
         <strong>${slotsUsed}</strong> of <strong>${maxSlots}</strong> slots in use.
       </p>
       <div class="prod-grid">
@@ -922,23 +919,6 @@ function renderPermitMarket(regime, d, config) {
       </div>
       ${tradeError ? `<div class="form-error">${tradeError}</div>` : ''}
       <button class="btn btn-success" onclick="window.hostApp.recordTrade('${regime}')">Record Trade</button>
-
-      ${regime === 'trademarket' && config.offsetAuctionEnabled ? `
-      <div class="offset-auction-panel info-box warn mt-1" style="margin-bottom:0;">
-        <h4 style="font-size:0.9rem;margin-bottom:0.35rem;">Offset auction</h4>
-        <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:0.65rem;">
-          Issue the same number of <strong>extra</strong> permits to every firm (for example a government permit sale mid-session).
-        </p>
-        <div class="two-col" style="align-items:flex-end;">
-          <div class="form-group" style="margin-bottom:0;">
-            <label for="offset-permits-per-firm">Extra permits per firm</label>
-            <input type="number" id="offset-permits-per-firm" min="1" max="30" value="1" step="1" inputmode="numeric" pattern="[0-9]*">
-          </div>
-          <div style="margin-bottom:0.5rem;">
-            <button type="button" class="btn btn-warn" onclick="window.hostApp.injectOffsetAuction('${regime}')">Add permits to all firms</button>
-          </div>
-        </div>
-      </div>` : ''}
 
       <div class="two-col mt-1">
         <div>
@@ -1117,7 +1097,7 @@ function renderRegimeSummary(regime, d, config, nextRegime, nextLabel) {
       <div class="dwl-box">
         <div class="dwl-label">Deadweight Loss (vs. free market)</div>
         <div class="dwl-value">${fmtMoney(dwl)}</div>
-        <div class="dwl-label">Excess cost of this regime's constraints</div>
+        <div class="dwl-label">Output foregone inside the same climate budget</div>
       </div>`;
   }
 
@@ -1223,7 +1203,6 @@ function renderRegimeSummary(regime, d, config, nextRegime, nextLabel) {
   return `
     <div class="card">
       <h2>Regime Summary: ${REGIME_LABELS[regime]}</h2>
-      ${dwlHtml}
       <table>
         <thead><tr><th>Firm</th><th class="num">Total Produced</th>${taxHead}${permitHead}<th class="num">Total Profit</th><th class="num">Final Capital</th></tr></thead>
         <tbody>
@@ -1237,6 +1216,7 @@ function renderRegimeSummary(regime, d, config, nextRegime, nextLabel) {
       ${taxHtml}
       ${marketHtml}
       ${ppmContextHtml}
+      ${dwlHtml}
       ${dwlAnalogHtml}
       ${debriefHtml}
       ${nextPreview}

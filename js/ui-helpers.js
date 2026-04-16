@@ -105,9 +105,9 @@ export function ppmContext(ppm) {
 export function dwlAnalogy(dwl, totalProfit) {
   if (dwl <= 0) return null;
   const pct = totalProfit > 0 ? ((dwl / (totalProfit + dwl)) * 100).toFixed(1) : null;
-  let analogy = `The ${fmtMoney(dwl)} deadweight loss is output this regime forgoes without buying any additional climate safety. Within a fair consumption space — the level of material provisioning society can sustain at 1.5 &deg;C — that foregone output is an avoidable drop in living standards, not foregone economic growth. The same emissions ceiling could have supported more of the goods and services people rely on.`;
+  let analogy = `The ${fmtMoney(dwl)} figure is the gap between this regime's output and what the free-market regime produced &mdash; bearing in mind that the free-market output came at the cost of breaching the safe climate threshold, so it is not a benchmark society could actually sustain. The economic interpretation is that the same regulatory goal could in principle have been met more efficiently &mdash; e.g. by allocating production toward firms that turn each unit of pollution into more useful output. Read through a fair-consumption-space lens (the level of material provisioning society can sustain within a 1.5&nbsp;&deg;C carbon budget), this inefficiency matters insofar as it cuts into the goods and services people rely on for a decent standard of living, rather than because it foregoes economic growth per se.`;
   if (pct !== null) {
-    analogy += ` In scale terms, it is equivalent to about ${pct}% of the industry's achievable output being left on the table even though the climate budget was unchanged.`;
+    analogy += ` In scale terms, it is roughly equivalent to ${pct}% of what the industry actually produced this regime.`;
   }
   return analogy;
 }
@@ -172,7 +172,7 @@ export function facilitatorNotes(regime) {
       ],
       debriefTips: [
         'Ask: "Was it fair that every firm had the same cap?" Some firms might have reduced pollution more cheaply.',
-        'Ask: "What was the deadweight loss? What does it represent?" (Output the industry could have produced within the same climate budget but did not — avoidable narrowing of the fair consumption space, not lost growth.)',
+        'Ask: "What was the deadweight loss? What does it represent?" (The mechanical figure compares to free-market output, but free-market output overshoots the safe climate threshold. Read it instead as: in principle, the same regulatory goal could have been met more efficiently — by allocating production to firms that turn each unit of pollution into more useful output. The lens that matters is the fair consumption space at 1.5 °C, not foregone growth.)',
         'Foreshadow: "What if instead of a hard cap, firms paid a price per unit of pollution?"',
       ],
     },
@@ -185,8 +185,8 @@ export function facilitatorNotes(regime) {
         'Clean-tech firms face a trade-off: lower tax per unit vs. a one-off sunk investment deducted from their capital before Round 1. Because that cash is no longer available for production, clean-tech firms start smaller and earn less in the early rounds.',
       ],
       expectedDynamics: [
-        'Clean-tech firms will earn less in rounds 1–2 because the sunk investment leaves them capital-constrained. This is deliberate — ask students whether this feels fair.',
-        'By round 3 the compounding tax saving pulls clean-tech firms ahead of standard firms on cumulative profit.',
+        'Clean-tech firms will earn less in rounds 1–3 because the sunk investment leaves them capital-constrained. This is deliberate — ask students whether this feels fair.',
+        'By round 4 the compounding tax saving pulls clean-tech firms ahead of standard firms on cumulative profit.',
         'Total emissions may still exceed the trigger — the tax rate may be too low.',
         'Students begin to see the efficiency argument: cleaner production requires an upfront investment, and a carbon tax gives firms a reason to make it.',
       ],
@@ -219,13 +219,13 @@ export function facilitatorNotes(regime) {
       timing: '15–20 minutes (5 rounds + permit allocation + trading rounds + discussion)',
       keyPoints: [
         'This is the culmination: a hard emissions cap plus a market mechanism for efficient allocation.',
-        'Clean-tech firms have already abated (the sunk investment was made at the start of the regime). Each of their permits covers 2,000 units of output, but the same sunk cost leaves them capital-constrained — so they typically hold slack permits they cannot profitably use.',
-        'Standard firms have more capital on hand and can still turn each permit into $1,000 of gross profit. They are the natural buyers.',
+        'Firms that take the clean-tech investment at the start of this regime will abate (their permits cover 2,000 units of output instead of 1,000), but the sunk cost leaves them capital-constrained — so they typically end up holding slack permits they cannot profitably use.',
+        'Firms that stay standard will keep more capital on hand and can still turn each permit into $1,000 of gross profit. They are the natural buyers in the permit market.',
         'Record trades carefully — the market price data is valuable for the final discussion.',
         'Let students negotiate freely. Don\'t set a price — the market should discover it.',
       ],
       expectedDynamics: [
-        'Clean-tech firms finish capital-constrained with slack permits and are willing to sell at any positive price. Standard firms finish permit-constrained and are willing to buy up to their gross permit value.',
+        'By the later rounds, clean-tech firms tend to be capital-constrained with slack permits (willing to sell at any positive price), while standard firms tend to be permit-constrained (willing to buy up to their gross permit value).',
         'The equilibrium price settles between those two anchors — above the sellers\' reservation (effectively $0) and below the buyers\' cap (the gross $1,000/permit value).',
         'Total emissions stay within the cap, but economic output is higher than under Cap alone because permits end up with the firms that can convert them into production.',
         'Some students may attempt price manipulation or collusion — note this for the political feasibility discussion.',
@@ -266,7 +266,7 @@ export function regimeDescription(regime, config) {
   const descriptions = {
     freemarket: `No regulation. Firms compete to maximise profit. Catastrophe at ${config.triggerPpm} ppm.`,
     cac: `Hard cap: no firm may produce more than <strong>${fmt(config.cacCap)}</strong> thingamabobs per round.`,
-    tax: `No cap. Tax is based on <strong>emissions</strong>: standard firms pay <strong>${fmtMoney(config.taxRate)}</strong> per unit (profit: ${fmtMoney(config.profitPerUnit - config.taxRate)}/unit). Clean-tech firms halve their emissions and pay <strong>${fmtMoney(config.taxRate / 2)}</strong> per unit (profit: ${fmtMoney(config.profitPerUnit - config.taxRate / 2)}/unit, minus ${fmtMoney(config.cleanTechCost)} setup/round).`,
+    tax: `No cap. Tax is based on <strong>emissions</strong>: standard firms pay <strong>${fmtMoney(config.taxRate)}</strong> per unit (profit: ${fmtMoney(config.profitPerUnit - config.taxRate)}/unit). Clean-tech firms halve their emissions and pay <strong>${fmtMoney(config.taxRate / 2)}</strong> per unit (profit: ${fmtMoney(config.profitPerUnit - config.taxRate / 2)}/unit, after a one-off ${fmtMoney(config.cleanTechCost)} clean-tech investment).`,
     trade: `No tax. Hard cap on CO\u2082 emissions via permits (1 permit = ${config.ppmPer1000} ppm CO\u2082). Standard firms: 1 permit = 1,000 units. Clean-tech firms: 1 permit = 2,000 units.`,
     trademarket: `Same permit rules as Cap, but firms may now <strong>buy and sell permits</strong>. The permit market logs each agreed trade: seller, buyer, permits, and price.`,
   };

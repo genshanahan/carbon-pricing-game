@@ -496,8 +496,9 @@ export function processPermitTrade(state, regime, seller, buyer, qty, price) {
   if (seller === buyer) return { error: 'Seller and buyer must be different firms.' };
   if (qty <= 0) return { error: 'Permits traded must be at least 1.' };
   if (price < 0) return { error: 'Price cannot be negative.' };
-  if (sellerFd.permits < qty) {
-    return { error: `Seller does not hold enough permits (has ${sellerFd.permits}, needs ${qty}).` };
+  const sellerRemaining = permitsRemaining(sellerFd);
+  if (sellerRemaining < qty) {
+    return { error: `Seller does not have enough unused permits (has ${Math.floor(sellerRemaining * 100) / 100} unused, needs ${qty}).` };
   }
   const totalCost = qty * price;
   if (buyerFd.capital < totalCost) {

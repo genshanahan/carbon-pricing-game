@@ -68,6 +68,7 @@ let cleanTechDecisionMade = {};
 let submissionErrors = {};
 let submissionClampNotes = {};
 let proposalSavedAt = {};
+let calcSimCleanTech = false;
 
 const content = document.getElementById('content');
 
@@ -79,9 +80,9 @@ function educatorCommentary(regime) {
 <p><strong>The key pedagogic insight:</strong> This is the tragedy of the commons in action. Rational individual behaviour produces a collectively irrational outcome. Many student groups spontaneously propose some form of production limit at this point — which is precisely what the next regime introduces.</p>`,
 
     cac: `<p><strong>What typically happens in a classroom:</strong> Catastrophe is usually avoided, but students quickly notice the inflexibility. Every firm is capped at the same level regardless of efficiency. Some students complain about being "stuck" — they have capital to spare but cannot use it.</p>
-<p><strong>The key pedagogic insight:</strong> Command and control provides quantity certainty (emissions are controlled) but at the cost of economic efficiency. The deadweight loss represents output that could have fit inside the same emissions budget — an avoidable narrowing of the fair consumption space, not foregone growth. Students often propose allowing firms to differ — "what if more efficient firms could produce more?" — which leads naturally to price-based instruments.</p>`,
+<p><strong>The key pedagogic insight:</strong> Command and control provides quantity certainty (emissions are controlled) but at the cost of economic efficiency. The deadweight loss is mechanically the gap to free-market output, but free-market output overshoots the safe climate threshold. The honest reading is: the same regulatory goal could in principle have been met more efficiently by allowing firms with cheaper abatement to produce more. Through a fair-consumption-space lens, what matters is the goods and services people rely on at 1.5 °C, not foregone growth. Students often propose allowing firms to differ — "what if more efficient firms could produce more?" — which leads naturally to price-based instruments.</p>`,
 
-    tax: `<p><strong>What typically happens in a classroom:</strong> Clean-tech firms earn noticeably less in rounds 1–2 because the upfront investment is sunk against their starting capital, leaving them smaller producers. By round 3 the compounding tax saving pulls them ahead of standard firms on cumulative profit. Students begin to see that cleaner production requires real upfront investment, and that a carbon tax gives firms a reason to make it.</p>
+    tax: `<p><strong>What typically happens in a classroom:</strong> Clean-tech firms earn noticeably less in rounds 1–3 because the upfront investment is sunk against their starting capital, leaving them smaller producers. By round 4 the compounding tax saving pulls them ahead of standard firms on cumulative profit. Students begin to see that cleaner production requires real upfront investment, and that a carbon tax gives firms a reason to make it.</p>
 <p><strong>The key pedagogic insight:</strong> A carbon tax gives price certainty but not quantity certainty — total emissions depend on how firms respond to the price signal. The tax rate may be too low (or too high). Students often ask: "What if we just set a hard limit on total emissions instead?" — which is exactly what permits do.</p>`,
 
     trade: `<p><strong>What typically happens in a classroom:</strong> Some firms finish with unused permits while others are constrained. Students quickly spot the inefficiency: "I have permits I don't need, and you want more — why can't we trade?"</p>
@@ -261,13 +262,6 @@ function renderRegimeScreen() {
   }
 
   if (d.rounds.length > 0) {
-    const lastRoundIdx = d.rounds.length - 1;
-    const lastClampKey = `${regime}_${lastRoundIdx}`;
-    if (submissionClampNotes[lastClampKey]) {
-      html += `<div class="card clamp-note" style="border-color:var(--warn);color:var(--warn);">
-        <p style="margin:0;"><strong>Heads up.</strong> ${submissionClampNotes[lastClampKey]}</p>
-      </div>`;
-    }
     html += renderRoundHistory(regime, d);
   }
 
@@ -290,11 +284,19 @@ function renderCleanTechDecision(regime, d, config) {
   const slotsUsed = d.firms.filter(f => f.cleanTech).length;
   const decided = cleanTechDecisionMade[regime];
 
+  const isTax = regime === 'tax';
+  const benefitConfirmed = isTax
+    ? `Clean tech halves your emissions and therefore your per-unit tax for all rounds of this regime.`
+    : `Clean tech halves your emissions, so each permit covers <strong>2,000</strong> units of production instead of 1,000 for the rest of this regime.`;
+  const benefitPre = isTax
+    ? `Clean tech halves your emissions per unit and halves your per-unit tax (this is the Carbon Tax regime),`
+    : `Clean tech halves your emissions per unit, so each permit covers <strong>2,000</strong> units instead of 1,000 (this is a permit-based regime),`;
+
   if (decided && playerHas) {
     return `<div class="card" style="border-color:var(--success);">
       <h3>Clean Technology</h3>
       <p style="font-size:0.88rem;">Your firm has invested in <strong>clean technology</strong> this regime (${slotsUsed} of ${maxSlots} slots in use).
-        Investment of ${fmtMoney(config.cleanTechCost)} has been deducted from your capital. Clean tech halves your emissions and therefore the tax rate per unit for all rounds.</p>
+        Investment of ${fmtMoney(config.cleanTechCost)} has been deducted from your capital. ${benefitConfirmed}</p>
     </div>`;
   }
 
@@ -313,7 +315,7 @@ function renderCleanTechDecision(regime, d, config) {
       Up to <strong>${maxSlots}</strong> firms may invest in clean technology.
     </p>
     <div class="info-box accent" style="font-size:0.85rem;margin-bottom:0.75rem;">
-      <strong>Investment:</strong> Clean tech halves your emissions per unit and halves your tax rate (in the Carbon Tax regime),
+      <strong>Investment:</strong> ${benefitPre}
       but requires a one-off investment of <strong>${fmtMoney(config.cleanTechCost)}</strong> deducted from your capital immediately.
       Your current capital: <strong>${fmtMoney(d.firms[PLAYER_FIRM].capital)}</strong>.
     </div>
@@ -365,6 +367,9 @@ function renderPlayerInput(regime, d, config) {
   const isTrade = regimeUsesPermits(regime);
   const roundKey = `${regime}_${d.currentRound}`;
   const submissionError = submissionErrors[roundKey] || '';
+  const lastRoundIdx = d.rounds.length - 1;
+  const lastClampKey = `${regime}_${lastRoundIdx}`;
+  const lastClampNote = (lastRoundIdx >= 0 && submissionClampNotes[lastClampKey]) ? submissionClampNotes[lastClampKey] : '';
 
   let constraints = `Available capital: ${fmtMoney(fd.capital)}`;
   if (isCaC) constraints += ` | Production cap: ${fmt(config.cacCap)}`;
@@ -380,11 +385,12 @@ function renderPlayerInput(regime, d, config) {
     <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.6rem;">
       Maximum you can produce: <strong>${fmt(maxAllowed)}</strong>
     </p>
-    ${renderCalculator(regime, fd, config)}
+    ${renderCalculator(regime, fd, config, d)}
     <div class="decision-block" style="margin-top:0.75rem;">
       <label for="soloProd" style="font-weight:600;">Your actual production decision:</label>
       <input type="number" id="soloProd" min="0" max="${maxAllowed}" placeholder="Enter units" step="1" inputmode="numeric" pattern="[0-9]*">
       ${submissionError ? `<div class="form-error mt-1">${submissionError}</div>` : ''}
+      ${lastClampNote ? `<p style="font-size:0.82rem;color:var(--warn);margin-top:0.5rem;">${lastClampNote}</p>` : ''}
       <br>
       <button class="btn btn-success" onclick="window.soloApp.submitRound('${regime}')" style="margin-top:0.5rem;">
         Submit Round ${d.currentRound + 1}
@@ -395,27 +401,159 @@ function renderPlayerInput(regime, d, config) {
 
 /* ── Calculator ── */
 
-function renderCalculator(regime, fd, config) {
-  const isTax = regimeUsesTax(regime);
-  const isClean = fd.cleanTech;
+function renderCleanTechSimToggle(regime, fd) {
+  if (!regimeUsesCleanTech(regime)) return '';
+  const sim = calcSimCleanTech;
+  return `
+    <div class="calc-sim-toggle" style="margin-bottom:0.65rem;font-size:0.82rem;">
+      <span style="color:var(--text-secondary);display:block;margin-bottom:0.35rem;">Simulate production as:</span>
+      <label style="display:inline-flex;align-items:center;margin-right:1rem;cursor:pointer;">
+        <input type="radio" name="calcSimClean" ${!sim ? 'checked' : ''} onchange="window.soloApp.setCalcSimCleanTech(false)">
+        <span style="margin-left:0.35rem;">Standard</span>
+      </label>
+      <label style="display:inline-flex;align-items:center;cursor:pointer;">
+        <input type="radio" name="calcSimClean" ${sim ? 'checked' : ''} onchange="window.soloApp.setCalcSimCleanTech(true)">
+        <span style="margin-left:0.35rem;">Clean tech</span>
+      </label>
+      ${sim !== fd.cleanTech ? `<div style="margin-top:0.4rem;color:var(--text-secondary);font-style:italic;">Your firm is assigned <strong>${fd.cleanTech ? 'clean tech' : 'standard'}</strong> in this regime; this toggle is for comparison only.</div>` : ''}
+    </div>`;
+}
 
-  let info = `Revenue: ${fmtMoney(config.revenuePerUnit)}/unit | Cost: ${fmtMoney(config.costPerUnit)}/unit`;
-  if (isTax) {
-    const rate = isClean ? config.taxRate / 2 : config.taxRate;
-    info += ` | Tax: ${fmtMoney(rate)}/unit`;
+function formatRoundProfitLine(regime, config, fd, ri, detail) {
+  const rLabel = `Round ${ri + 1}`;
+  const { p, cost, revenue, tax, profit } = detail;
+  if (p <= 0) {
+    return `<p><strong>${rLabel}:</strong> 0 units produced &rarr; ${fmtMoney(0)} profit.</p>`;
   }
-  if (isClean && fd.cleanTechInvestment) {
-    info += ` | Clean-tech investment (sunk): ${fmtMoney(fd.cleanTechInvestment)}`;
+  if (regime === 'freemarket' || regime === 'cac') {
+    return `<p><strong>${rLabel}:</strong> ${fmt(p)} units &times; ${fmtMoney(config.profitPerUnit)}/unit
+      (${fmtMoney(revenue)} revenue &minus; ${fmtMoney(cost)} cost) = <strong>${fmtMoney(profit)}</strong>.</p>`;
+  }
+  if (regime === 'tax') {
+    const rate = fd.cleanTech ? config.taxRate / 2 : config.taxRate;
+    const taxBit = `${fmtMoney(tax)} tax (${fmt(p)} &times; ${fmtMoney(rate)}/unit)`;
+    return `<p><strong>${rLabel}:</strong> ${fmtMoney(revenue)} revenue &minus; ${fmtMoney(cost)} cost &minus; ${taxBit} = <strong>${fmtMoney(profit)}</strong>.</p>`;
+  }
+  return `<p><strong>${rLabel}:</strong> ${fmtMoney(revenue)} revenue &minus; ${fmtMoney(cost)} cost = <strong>${fmtMoney(profit)}</strong> (${fmt(p)} units).</p>`;
+}
+
+function renderProfitBreakdown(regime, config, fd, d) {
+  const rev = fmtMoney(config.revenuePerUnit);
+  const cost = fmtMoney(config.costPerUnit);
+  const pp = fmtMoney(config.profitPerUnit);
+  const tr = fmtMoney(config.taxRate);
+  const trHalf = fmtMoney(config.taxRate / 2);
+
+  const rounds = Array.isArray(d.rounds) ? d.rounds : [];
+  const roundLines = rounds.map((r, ri) => {
+    const p = (r.production && r.production[PLAYER_FIRM]) || 0;
+    const detail = roundProfitDetailForFirm(regime, config, fd, p);
+    return formatRoundProfitLine(regime, config, fd, ri, detail);
+  }).join('');
+
+  let summary = '';
+  if (regime === 'freemarket' || regime === 'cac') {
+    summary = `<p><strong>Rule:</strong> revenue ${rev} &minus; cost ${cost} = ${pp} profit per unit; round profit = ${pp} &times; units produced.</p>`;
+    if (regime === 'cac') summary += `<p><strong>Cap:</strong> at most ${fmt(config.cacCap)} units per round.</p>`;
+  } else if (regime === 'tax') {
+    summary = `<p><strong>Rule:</strong> standard tax ${tr}/unit; clean tech ${trHalf}/unit.</p>`;
+    if (fd.cleanTech && fd.cleanTechInvestment) {
+      summary += `<p><strong>Sunk investment (before Round 1):</strong> &minus;${fmtMoney(fd.cleanTechInvestment)} (one-off clean-tech cost).</p>`;
+    }
+  } else {
+    summary = `<p><strong>Rule:</strong> ${rev} &minus; ${cost} = ${pp} per unit. Clean-tech firms produce 2,000 units per permit instead of 1,000.</p>`;
+    if (fd.cleanTech && fd.cleanTechInvestment) {
+      summary += `<p><strong>Sunk investment (before Round 1):</strong> &minus;${fmtMoney(fd.cleanTechInvestment)} (one-off clean-tech cost).</p>`;
+    }
+    if (regime === 'trademarket') summary += `<p><strong>Trading:</strong> permit sales/purchases adjust your cash and profit totals.</p>`;
   }
 
-  return `<div class="calculator-box">
-    <h4><span class="calc-scratch-badge">Scratchpad</span> Profit Calculator</h4>
-    <div class="calc-subtitle">Explore strategies here &mdash; this does not submit anything. Your actual decision goes in the box below.</div>
-    <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:0.5rem;">${info}</div>
-    <label>Try a quantity:</label>
-    <input type="number" id="calcInput" min="0" placeholder="e.g. 500" oninput="window.soloApp.updateCalc('${regime}')" style="width:100%;margin-bottom:0.4rem;" step="1" inputmode="numeric">
-    <div class="calculator-result" id="calcResult">Enter a number above</div>
-  </div>`;
+  const actualBlock = rounds.length
+    ? `<div class="calc-round-actuals"><strong>Your completed rounds</strong>${roundLines}</div>`
+    : `<p><em>No rounds completed yet in this regime.</em></p>`;
+
+  return `
+    <details class="facilitator-notes calc-breakdown">
+      <summary>How profit is calculated</summary>
+      <div class="fn-body">
+        ${summary}
+        ${actualBlock}
+      </div>
+    </details>`;
+}
+
+function renderPermitValueExplain(config, simClean) {
+  const upp = simClean ? 2000 : 1000;
+  const gross = upp * config.profitPerUnit;
+  return `
+    <div class="permit-value-explain info-box accent" style="font-size:0.82rem;margin-top:0.65rem;">
+      <strong>How permit value is calculated</strong> (matches the production simulator: ${simClean ? 'clean tech' : 'standard'}):
+      each permit covers <strong>${fmt(upp)}</strong> units at ${fmtMoney(config.profitPerUnit)}/unit operating profit
+      &rarr; <strong>${fmtMoney(gross)}</strong> gross value from using one permit for production.
+      (The clean-tech investment is sunk &mdash; already paid &mdash; so it does not reduce a permit's marginal value.)
+      Compare that value to the market price when deciding to buy or sell.
+    </div>`;
+}
+
+function renderCalculator(regime, fd, config, d) {
+  const capLine = `<div class="calc-capital-line" style="font-size:0.85rem;font-weight:600;margin-bottom:0.5rem;">Available capital: ${fmtMoney(fd.capital)}</div>`;
+  const simToggle = renderCleanTechSimToggle(regime, fd);
+  const breakdown = renderProfitBreakdown(regime, config, fd, d);
+  const scratchSubtitle = `<div class="calc-subtitle">Explore scenarios here &mdash; this does not submit anything. Your actual decision goes in the box below.</div>`;
+
+  if (regime === 'freemarket' || regime === 'cac') {
+    return `
+      <div class="calculator-box">
+        <h3><span class="calc-scratch-badge">Scratchpad</span>Profit Calculator</h3>
+        ${scratchSubtitle}
+        ${capLine}
+        <label>Try a quantity:</label>
+        <input type="number" id="calcInput" min="0" placeholder="e.g. 500" oninput="window.soloApp.updateCalc('${regime}')" style="width:100%;margin-bottom:0.4rem;" step="1" inputmode="numeric" pattern="[0-9]*">
+        <div class="calculator-result" id="calcResult">Enter a number above</div>
+        ${breakdown}
+      </div>`;
+  }
+
+  if (regime === 'tax') {
+    const sim = calcSimCleanTech;
+    const effectiveRate = sim ? config.taxRate / 2 : config.taxRate;
+    const profitPerUnit = config.profitPerUnit - effectiveRate;
+    return `
+      <div class="calculator-box">
+        <h3><span class="calc-scratch-badge">Scratchpad</span>Profit Calculator (after tax)</h3>
+        ${scratchSubtitle}
+        ${capLine}
+        ${simToggle}
+        <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:0.5rem;">
+          Tax/unit: ${fmtMoney(effectiveRate)} | Profit/unit: ${fmtMoney(profitPerUnit)}
+        </div>
+        <label>Try a quantity:</label>
+        <input type="number" id="calcInput" min="0" placeholder="e.g. 500" oninput="window.soloApp.updateCalc('${regime}')" style="width:100%;margin-bottom:0.4rem;" step="1" inputmode="numeric" pattern="[0-9]*">
+        <div class="calculator-result" id="calcResult">Enter a number above</div>
+        ${breakdown}
+      </div>`;
+  }
+
+  if (regime === 'trade' || regime === 'trademarket') {
+    const sim = calcSimCleanTech;
+    const upp = sim ? 2000 : 1000;
+    return `
+      <div class="calculator-box">
+        <h3><span class="calc-scratch-badge">Scratchpad</span>Production Calculator</h3>
+        ${scratchSubtitle}
+        ${capLine}
+        ${simToggle}
+        <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:0.5rem;">
+          Units/permit: ${fmt(upp)} | Profit/unit: ${fmtMoney(config.profitPerUnit)}
+        </div>
+        <label>Try a quantity:</label>
+        <input type="number" id="calcInput" min="0" placeholder="e.g. 500" oninput="window.soloApp.updateCalc('${regime}')" style="width:100%;margin-bottom:0.4rem;" step="1" inputmode="numeric" pattern="[0-9]*">
+        <div class="calculator-result" id="calcResult">Enter a number above</div>
+        ${breakdown}
+      </div>`;
+  }
+
+  return '';
 }
 
 /* ── Permit trade panel ── */
@@ -433,9 +571,9 @@ function renderTradePanel(regime, d, config) {
     if (i !== PLAYER_FIRM) {
       const afford = maxAffordable(fd, config);
       if (pr > 0 && reservation === 0) {
-        marketRole = '<span style="color:var(--success);font-weight:600;">Seller</span> (slack permits)';
+        marketRole = '<span style="color:var(--success);font-weight:600;">Would sell surplus</span>';
       } else if (pr <= 0 && afford > 0) {
-        marketRole = `<span style="color:#c0392b;font-weight:600;">Buyer</span> (will pay up to ${fmtMoney(reservation)})`;
+        marketRole = `<span style="color:#c0392b;font-weight:600;">Would buy up to ${fmtMoney(reservation)}</span>`;
       } else if (reservation > 0) {
         marketRole = `Will sell at \u2265 ${fmtMoney(reservation)}`;
       } else {
@@ -468,18 +606,12 @@ function renderTradePanel(regime, d, config) {
   </div>` : '';
 
   const playerActualClean = !!playerFd.cleanTech;
-  const uppPlayer = playerActualClean ? 2000 : 1000;
-  const grossPermitValue = uppPlayer * config.profitPerUnit;
   const tradeCalcBlock = `
     <div class="trade-price-calc" style="margin-top:1rem;padding:0.75rem;border:1px dashed #b8c8d4;border-radius:0.5rem;background:#fafbfc;">
-      <h3><span class="calc-scratch-badge">Scratchpad</span> Trade-Price Calculator</span></h3>
+      <h3><span class="calc-scratch-badge">Scratchpad</span> Trade-Price Calculator</h3>
       <div class="calc-subtitle" style="margin-bottom:0.5rem;">Try a market price to see whether selling or buying looks attractive for <em>you</em> (${playerActualClean ? 'clean tech' : 'standard'}). Does not submit a trade.</div>
-      <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:0.5rem;">
-        Gross permit value for your firm: <strong>${fmtMoney(grossPermitValue)}</strong>
-        (${fmt(uppPlayer)} units &times; ${fmtMoney(config.profitPerUnit)}/unit).
-        <div class="calc-subtitle">(The clean-tech investment is sunk &mdash; it does not reduce a permit's marginal value.)</div>
-      </div>
-      <label for="tradeCalcPrice">Price per permit ($):</label>
+      ${renderPermitValueExplain(config, playerActualClean)}
+      <label for="tradeCalcPrice" style="margin-top:0.65rem;display:block;">Price per permit ($):</label>
       <input type="number" id="tradeCalcPrice" min="0" placeholder="e.g. 500" step="1" inputmode="numeric" pattern="[0-9]*" oninput="window.soloApp.updateTradeCalc()" style="width:100%;margin-bottom:0.4rem;">
       <div class="calculator-result" id="tradeCalcResult">Enter a price above</div>
     </div>`;
@@ -555,7 +687,7 @@ function renderCompetitorCard(regime, d, config) {
 
     let roleBit = '';
     if (isTrademarket) {
-      const res = aiReservationPrice(i, fd, config);
+      const res = aiReservationPrice(i, fd, config, regime);
       const pr = permitsRemaining(fd);
       let role;
       if (pr > 0 && res === 0) role = '<span class="market-role seller">Would sell surplus</span>';
@@ -693,9 +825,8 @@ function renderDebriefScreen() {
 
   const prompt = debriefPrompt(regime);
   const existingProposal = playerProposals[regime] || '';
-  const savedAt = proposalSavedAt[regime];
-  const savedConfirmation = savedAt
-    ? `<span class="proposal-save-status" style="margin-left:0.6rem;font-size:0.82rem;color:var(--success,#2e7d32);">Response saved ${savedAt}.</span>`
+  const savedConfirmation = proposalSavedAt[regime]
+    ? `<span class="proposal-save-status" style="margin-left:0.6rem;font-size:0.82rem;color:var(--success,#2e7d32);">Response saved.</span>`
     : '';
   html += `<div class="debrief-student-card">
     <h3>What would you change?</h3>
@@ -850,11 +981,12 @@ function renderResultsScreen() {
 
     ${proposalReview}
     ${discussionHtml}
-    ${aiReveal}
 
     <div class="card text-center">
       <button class="btn btn-primary" onclick="window.soloApp.playAgain()">Play Again</button>
-    </div>`;
+    </div>
+
+    ${aiReveal}`;
 }
 
 /* ── Charts ── */
@@ -960,6 +1092,7 @@ window.soloApp = {
     }
 
     cleanTechDecisionMade[regime] = true;
+    calcSimCleanTech = !!d.firms[PLAYER_FIRM].cleanTech;
 
     if (regimeUsesPermits(regime)) {
       const perFirm = defaultPermitsPerFirm(state.config);
@@ -978,7 +1111,7 @@ window.soloApp = {
     const roundKey = `${regime}_${d.currentRound}`;
 
     if (input.value.trim() === '') {
-      submissionErrors[roundKey] = 'Please enter a production decision before submitting. Typing 0 is allowed.';
+      submissionErrors[roundKey] = 'Please enter a production decision before submitting.';
       render();
       return;
     }
@@ -1053,6 +1186,11 @@ window.soloApp = {
     render();
   },
 
+  setCalcSimCleanTech(simClean) {
+    calcSimCleanTech = !!simClean;
+    render();
+  },
+
   updateCalc(regime) {
     const input = document.getElementById('calcInput');
     const result = document.getElementById('calcResult');
@@ -1062,10 +1200,16 @@ window.soloApp = {
 
     const config = state.config;
     const fd = state.regimeData[regime].firms[PLAYER_FIRM];
-    const detail = roundProfitDetailForFirm(regime, config, fd, qty);
-    const ppmAdded = (qty / 1000) * (fd.cleanTech ? config.ppmPer1000 / 2 : config.ppmPer1000);
+    const usesClean = regimeUsesCleanTech(regime);
+    const simFd = usesClean ? { ...fd, cleanTech: calcSimCleanTech, cleanTechInvestment: calcSimCleanTech ? (fd.cleanTechInvestment || config.cleanTechCost) : 0 } : fd;
+    const detail = roundProfitDetailForFirm(regime, config, simFd, qty);
+    const ppmAdded = (qty / 1000) * (simFd.cleanTech ? config.ppmPer1000 / 2 : config.ppmPer1000);
 
-    result.innerHTML = `Profit: <strong>${fmtMoney(detail.profit)}</strong> | CO\u2082: +${fmt(ppmAdded)} ppm${detail.tax > 0 ? ` | Tax: ${fmtMoney(detail.tax)}` : ''}`;
+    const simNote = (usesClean && calcSimCleanTech !== !!fd.cleanTech)
+      ? ` <span style="color:var(--text-secondary);font-style:italic;">(simulating ${calcSimCleanTech ? 'clean tech' : 'standard'})</span>`
+      : '';
+
+    result.innerHTML = `Profit: <strong>${fmtMoney(detail.profit)}</strong> | CO\u2082: +${fmt(ppmAdded)} ppm${detail.tax > 0 ? ` | Tax: ${fmtMoney(detail.tax)}` : ''}${simNote}`;
   },
 
   updateTradeCalc() {
@@ -1114,12 +1258,10 @@ window.soloApp = {
     if (!textarea) return;
     playerProposals[regime] = textarea.value.trim();
     persistProposals();
-    const now = new Date();
-    const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    proposalSavedAt[regime] = `at ${time}`;
+    proposalSavedAt[regime] = true;
     const status = document.getElementById('proposalSaveStatus');
     if (status) {
-      status.innerHTML = `<span class="proposal-save-status" style="margin-left:0.6rem;font-size:0.82rem;color:var(--success,#2e7d32);">Response saved ${proposalSavedAt[regime]}.</span>`;
+      status.innerHTML = `<span class="proposal-save-status" style="margin-left:0.6rem;font-size:0.82rem;color:var(--success,#2e7d32);">Response saved.</span>`;
     }
   },
 
@@ -1142,6 +1284,7 @@ window.soloApp = {
     } else {
       state.regime = next;
       const d = state.regimeData[next];
+      calcSimCleanTech = !!d.firms[PLAYER_FIRM].cleanTech;
 
       if (regimeUsesCleanTech(next)) {
         currentScreen = 'regime';

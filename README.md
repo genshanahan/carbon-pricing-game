@@ -1,7 +1,3 @@
----
-modified_date: 2026-04-17
-created_date: 2026-04-15
----
 # The Carbon Pricing Simulation Game
 
 An interactive classroom simulation of five carbon regulation regimes — from free markets to cap and trade — designed for sustainability and business education.
@@ -16,20 +12,16 @@ Students on sustainability and business courses need to understand the orthodox 
 
 This game addresses that gap. It walks students through five regulatory regimes using identical production arithmetic: each unit costs $1 to produce, sells for $2, and generates CO₂ emissions. The *only* thing that changes from regime to regime is the regulatory rule. Students feel each mechanism's logic directly — how the rule shapes incentives, redistributes costs, and determines whether the atmosphere survives.
 
-**The game deliberately encodes neoclassical economic orthodoxy.** It models the textbook story — market failure, command-and-control inefficiency, Pigouvian tax, Coasean permit trading — cleanly and simply. This is by design. The game provides the scaffolding students need to grasp the orthodox perspective, which in turn equips them to engage meaningfully with critical perspectives on carbon pricing (distributional justice, regulatory capture, political feasibility) through structured debriefs after each regime.
+**The game deliberately encodes neoclassical economic orthodoxy.** It models the textbook story — market failure, command-and-control inefficiency, Pigouvian tax, Coasean permit trading — cleanly and simply. This is by design. The game provides the scaffolding students need to grasp the orthodox perspective, which in turn equips them to engage meaningfully with critical perspectives on carbon pricing through structured debriefs after each regime.
 
 ## What students experience
 
 The session progresses through five regulatory regimes. Capital, costs, and revenue are reset at the start of each regime; the only variable is the rule.
 
 1. **Free Market** — No regulation. Firms compete to maximise profit. The historical pattern: rational profit-maximisation destroys the commons. Students articulate in their own words why unregulated prices fail to reflect the true costs of production.
-
 2. **Command and Control** — A uniform production cap per firm. The atmosphere survives, but the flat cap wastes productive capacity. Students see the deadweight loss that motivates the efficiency critique behind market-based alternatives.
-
 3. **Carbon Tax** — A per-unit tax on emissions replaces the cap. Clean technology (limited slots, sunk investment) halves a firm's emissions and effective tax rate, introducing firm heterogeneity. Price signals redirect behaviour, but create winners and losers. Students confront the distributional consequences of incentive-based regulation.
-
 4. **Cap** — The tax is removed. The regulator issues a fixed number of emissions permits. Clean-tech firms can produce more per permit. Students experience the rigidity of a fixed allocation — some firms are permit-constrained while others have capacity to spare.
-
 5. **Cap and Trade** — Same permit mechanics, but firms may now buy and sell permits through bilateral negotiation. Permits flow to the highest-value users, and a market price emerges. Students see how trade reallocates emissions rights and discover the price the market produces.
 
 ## Learning outcomes
@@ -66,23 +58,21 @@ Open **[solo.html](https://genshanahan.github.io/carbon-pricing-simulation-game/
 
 ## Adapts and extends
 
-This game adapts and extends three prior educational simulations:
+This game combines, adapts and extends three prior educational simulations:
 
 - **The Thingamabob Game** — Bigelow, B. (2015). The Thingamabob Game: A simulation on capitalism vs. the climate. In B. Bigelow & T. Swinehart (Eds.), *A people's curriculum for the earth: Teaching climate change and the environmental crisis*. Milwaukee, WI: Rethinking Schools. [PDF](https://hrwstf.org/wp-content/uploads/2025/08/thingamabob-game-capitalism-climate.pdf)
-
 - **The Carbon Emissions Game** — Sethi, G. (2017). The Carbon Emissions Game. SERC InTeGrate. [Link](https://serc.carleton.edu/integrate/teaching_materials/carbon_emissions/unit6.html)
+- **The Pollution Game** — Corrigan, J. R. (2011). The Pollution Game: A classroom game demonstrating the relative effectiveness of emissions taxes and tradable permits. *The Journal of Economic Education*, 42(1), 70–78. [doi:10.1080/00220485.2011.536491](https://doi.org/10.1080/00220485.2011.536491) 
 
-- **The Pollution Game** — Corrigan, J. R. (2011). The Pollution Game: A classroom game demonstrating the relative effectiveness of emissions taxes and tradable permits. *The Journal of Economic Education*, 42(1), 70–78. [doi:10.1080/00220485.2011.536491](https://doi.org/10.1080/00220485.2011.536491)
-
-The key adaptation is simplification: the game strips out continuous marginal abatement cost curves in favour of a binary clean-technology toggle, keeping the arithmetic accessible to students without economics training while preserving the structural dynamics of each regulatory regime.
+The first regime is a straightforward implementation of **The Thingamabob Game**, which gives students a simulated experience of the profit motive and how, without some form of regulation, profit maximization irrationally but irresistably drives catastrophic emissions. A simplified form of **The Carbon Emissions Game** (itself adapted from **The Pollution Game**) then walks students through the main forms of regulation designed to address this problem, again using the in-game competiton to simulate the structural dynamics of each approach. The simplification primarily entails stripping out detail regarding continuous marginal abatement cost curves in favour of a binary clean-technology toggle, keeping the arithmetic accessible to students without economics training while preserving the structural dynamics of each regulatory regime.
 
 ## How to cite
 
-> Shanahan, G. (2026). *The Carbon Pricing Simulation Game* [Web application]. Cardiff Business School, Cardiff University. Available at: https://github.com/genshanahan/carbon-pricing-simulation-game
+> Shanahan, G. (2026). *The Carbon Pricing Simulation Game* [Web application]. Cardiff Business School, Cardiff University. Available at: [https://github.com/genshanahan/carbon-pricing-simulation-game](https://github.com/genshanahan/carbon-pricing-simulation-game)
 
 ## Licence
 
-This project is released under **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International** ([CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)). See the [`LICENSE`](LICENSE) file for details.
+This project is released under **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International** ([CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)). See the `[LICENSE](LICENSE)` file for details.
 
 You are free to adapt and share this game for non-commercial educational purposes, provided you give appropriate credit and distribute any adaptations under the same licence.
 

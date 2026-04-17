@@ -5,7 +5,7 @@
 import {
   REGIMES, REGIME_LABELS, buildConfig, regimeSequence, maxAllowedProduction, unitsPerPermit,
   permitsRemaining, normalizeStateFromRemote, maxAffordable, maxProductionFromPermits,
-  totalTaxPaidByFirm, roundProfitDetailForFirm, computeDeadweightLoss,
+  totalTaxPaidByFirm, roundProfitDetailForFirm, computeTotalEconomicOutput, computeBudgetUsed,
 } from './game-engine.js';
 import {
   onStateChange, submitDecision, registerStudent, submitProposal, claimCleanTech, onCleanTechClaims,
@@ -13,7 +13,8 @@ import {
 import {
   fmt, fmtMoney, renderCO2Meter, firmColor, cleanBadge, regimeUsesCleanTech, regimeUsesTax,
   regimeUsesPermits, regimeHasCap, regimeHasPermitMarket, regimeDescription, debriefPrompt,
-  ppmContext, dwlAnalogy,
+  outputBudgetAnalogy, formatTotalEconomicOutput, formatBudgetUsed, budgetUsedStyle,
+  renderRoundHistory, renderCO2Extra, renderDiscussionCard, renderComparisonTable,
 } from './ui-helpers.js';
 
 /* ── Globals ── */
@@ -114,20 +115,6 @@ function parseWholeNumber(raw) {
   const text = String(raw).trim();
   if (!/^\d+$/.test(text)) return null;
   return parseInt(text, 10);
-}
-
-function renderCatastropheCard(d, config) {
-  if (!d.catastrophe) return '';
-  const context = ppmContext(d.ppm);
-  return `
-    <div class="catastrophe-overlay card" role="alert" aria-live="assertive">
-      <h3>Catastrophe threshold breached</h3>
-      <p>
-        Emissions exceeded the safe limit of <strong>${fmt(config.triggerPpm)} ppm</strong>.
-        Firms can still keep producing this regime, as often happens in real-world policy.
-      </p>
-      <p class="catastrophe-context">${context.description}</p>
-    </div>`;
 }
 
 /** Student self-claim for clean tech (first-come; host mirrors via Firebase). */
@@ -253,8 +240,9 @@ function renderRegime(regime) {
     </div>
   `;
 
-  html += renderCO2Meter(d.ppm, config);
-  html += renderCatastropheCard(d, config);
+  if (!roundDone) {
+    html += renderCO2Meter(d.ppm, config, renderCO2Extra(d.ppm, config));
+  }
 
   if (isTrade) {
     const pr = permitsRemaining(fdEff);
@@ -272,8 +260,8 @@ function renderRegime(regime) {
   if (!roundDone) {
     ensureCalcSim(regime, fdEff, d.currentRound);
     html += renderCleanTechClaimCard(regime, d, fdEff, config);
+    html += renderCalculator(regime, fdEff, config, d);
   }
-  html += renderCalculator(regime, fdEff, config, d);
 
   if (!roundDone) {
     const roundKey = `${regime}_${d.currentRound}`;
@@ -302,7 +290,7 @@ function renderRegime(regime) {
             ${isCaC ? `(Cap: ${fmt(config.cacCap)})` : ''}
             (Max: ${fmt(maxAllowed)})
           </p>
-          <input type="number" id="studentProd" min="0" max="${maxAllowed}" placeholder="Enter units" step="1" inputmode="numeric" pattern="[0-9]*">
+          <input type="number" id="studentProd" min="0" max="${maxAllowed}" placeholder="Enter units" step="1" inputmode="numeric" pattern="[0-9]*" onkeydown="if(event.key==='Enter')window.playApp.submitProd('${regime}',${d.currentRound},${maxAllowed})">
           ${submissionError ? `<div class="form-error mt-1">${submissionError}</div>` : ''}
           <br>
           <button class="btn btn-success" onclick="window.playApp.submitProd('${regime}', ${d.currentRound}, ${maxAllowed})">
@@ -311,12 +299,18 @@ function renderRegime(regime) {
         </div>`;
     }
   } else {
-    html += renderFirmSummary(regime, d, fd);
-    html += renderDebriefPrompt(regime, d);
+    if (d.debriefActive) {
+      html += renderFirmSummary(regime, d, fd);
+      html += renderDebriefPrompt(regime, d);
+    } else {
+      html += `<div class="card" style="text-align:center;color:var(--text-secondary);">
+        <p>All ${config.numRounds} rounds complete. Waiting for the facilitator to begin the debrief&hellip;</p>
+      </div>`;
+    }
   }
 
   if (d.rounds.length > 0) {
-    html += renderMyHistory(d);
+    html += renderRoundHistory(regime, d, state.firms, state.config, FIRM_ID);
   }
 
   return html;
@@ -538,7 +532,6 @@ function renderDebriefPrompt(regime, d) {
 /* ── Firm summary at end of regime ── */
 
 function renderFirmSummary(regime, d, fd) {
-  const ppmCtx = ppmContext(d.ppm);
   const config = state.config;
   let extraRows = '';
   if (regime === 'tax') {
@@ -550,23 +543,22 @@ function renderFirmSummary(regime, d, fd) {
     extraRows += `<div class="stat-row"><span class="stat-label">Unused permits at end</span><span class="stat-value">${fmt(unused)}</span></div>`;
   }
 
-  let dwlHtml = '';
-  let dwlAnalogHtml = '';
-  if (regime !== 'freemarket') {
-    const dwl = computeDeadweightLoss(state, regime);
-    const totalIndustryProfit = d.firms.reduce((s, f) => s + f.totalProfit, 0);
-    dwlHtml = `
-      <div class="dwl-box">
-        <div class="dwl-label">Deadweight loss (vs. free market)</div>
-        <div class="dwl-value">${fmtMoney(dwl)}</div>
-        <div class="dwl-label">Output foregone inside the same climate budget (whole industry)</div>
-      </div>`;
-    const analog = dwlAnalogy(dwl, totalIndustryProfit);
-    if (analog) {
-      dwlAnalogHtml = `<div class="dwl-analogy-box"><p>${analog}</p></div>`;
-    }
-  }
-
+  const output = computeTotalEconomicOutput(state, regime);
+  const budgetUsed = computeBudgetUsed(state, regime);
+  const budgetCellStyle = budgetUsedStyle(budgetUsed);
+  const efficiencyHtml = `
+    <div class="efficiency-box">
+      <div class="efficiency-metric">
+        <div class="efficiency-label">Total Economic Output</div>
+        <div class="efficiency-value">${formatTotalEconomicOutput(output)}</div>
+        <div class="efficiency-label">Firm profit + tax revenue</div>
+      </div>
+      <div class="efficiency-metric"${budgetCellStyle ? ` style="${budgetCellStyle}border-radius:0.5rem;padding:0.5rem;"` : ''}>
+        <div class="efficiency-label">% of Safe Carbon Budget Used</div>
+        <div class="efficiency-value">${formatBudgetUsed(budgetUsed)}</div>
+        <div class="efficiency-label"><i> (treating 450 ppm as the "safe" carbon budget)</i></div>
+      </div>
+    </div>`;
   return `
     <div class="card" style="border-color:${firmColor(FIRM_ID)};">
       <h3>Your Results: ${REGIME_LABELS[regime]}</h3>
@@ -576,34 +568,8 @@ function renderFirmSummary(regime, d, fd) {
       ${extraRows}
       <div class="stat-row"><span class="stat-label">Catastrophe?</span><span class="stat-value">${d.catastrophe ? 'Yes' : 'No'}</span></div>
     </div>
-    <div class="ppm-context-box" style="border-color:${ppmCtx.colour};">
-      <div class="ppm-context-level" style="color:${ppmCtx.colour};">${ppmCtx.level}</div>
-      <p>${ppmCtx.description}</p>
-      <div class="ppm-context-source">Source: IPCC AR6 Synthesis Report (2023)</div>
-    </div>
-    ${dwlHtml}
-    ${dwlAnalogHtml}`;
-}
-
-/* ── Student's own production history ── */
-
-function renderMyHistory(d) {
-  const rows = d.rounds.map((r, ri) => `
-    <tr>
-      <td>R${ri + 1}</td>
-      <td class="num">${fmt(r.production[FIRM_ID])}</td>
-      <td class="num">${fmt(r.totalProduction)}</td>
-      <td class="num">${fmt(r.ppmAfter)}</td>
-    </tr>`).join('');
-
-  return `
-    <div class="card">
-      <h3>Round History</h3>
-      <table>
-        <thead><tr><th></th><th class="num">Your prod.</th><th class="num">Industry total</th><th class="num">CO\u2082</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>`;
+    ${renderCO2Meter(d.ppm, config, renderCO2Extra(d.ppm, config))}
+    ${efficiencyHtml}`;
 }
 
 /* ── Results view ── */
@@ -619,8 +585,24 @@ function renderResults() {
       <td class="num">${fmt(fd[ri].totalProduced)}</td>
       <td class="num">${fmtMoney(fd[ri].totalProfit)}</td>
       <td class="num">${fmtMoney(fd[ri].capital)}</td>
-      <td class="num">${state.regimeData[r].catastrophe ? 'No' : 'Yes'}</td>
+      <td class="num">${state.regimeData[r].catastrophe ? 'Yes' : 'No'}</td>
     </tr>`).join('');
+
+  const crossRegimeRows = completed.map(r => {
+    const d = state.regimeData[r];
+    const totalProd = d.firms.reduce((s, f) => s + f.totalProduced, 0);
+    const output = computeTotalEconomicOutput(state, r);
+    const budgetUsed = computeBudgetUsed(state, r);
+    const budgetStyle = budgetUsedStyle(budgetUsed);
+    return `<tr>
+      <td><strong>${REGIME_LABELS[r]}</strong></td>
+      <td class="num">${fmt(totalProd)}</td>
+      <td class="num">${fmt(d.ppm)}</td>
+      <td class="num">${d.catastrophe ? 'Yes' : 'No'}</td>
+      <td class="num">${formatTotalEconomicOutput(output)}</td>
+      <td class="num"${budgetStyle ? ` style="${budgetStyle}"` : ''}>${formatBudgetUsed(budgetUsed)}</td>
+    </tr>`;
+  }).join('');
 
   return `
     <div class="card">
@@ -631,19 +613,22 @@ function renderResults() {
       </table>
     </div>
     <div class="card">
-      <h3>Comparison Table</h3>
-      <p style="font-size:0.85rem;color:var(--text-secondary);">
-        Discuss with your team and fill in the projected comparison table.
-      </p>
-      <table style="font-size:0.82rem;">
-        <thead><tr><th></th>${completed.map(r => `<th>${REGIME_LABELS[r]}</th>`).join('')}</tr></thead>
-        <tbody>
-          <tr><td><strong>Material viability</strong></td>${completed.map(() => '<td></td>').join('')}</tr>
-          <tr><td><strong>Normative desirability</strong></td>${completed.map(() => '<td></td>').join('')}</tr>
-          <tr><td><strong>Political feasibility</strong></td>${completed.map(() => '<td></td>').join('')}</tr>
-        </tbody>
+      <h2>Cross-Regime Comparison</h2>
+      <div style="overflow-x:auto;">
+      <table>
+        <thead><tr><th>Regime</th><th class="num">Total Prod.</th><th class="num">Final ppm</th><th class="num">Catastrophe?</th><th class="num">Total Economic Output</th><th class="num">Budget Used</th></tr></thead>
+        <tbody>${crossRegimeRows}</tbody>
       </table>
-    </div>`;
+      </div>
+      <p style="font-size:0.8rem;color:var(--text-secondary);margin-top:0.5rem;">Total Economic Output = firm profit + tax revenue collected by government. Budget Used = ppm added as a percentage of the safe carbon budget; values above 100% indicate overshoot of the catastrophe trigger.</p>
+    </div>
+    <div class="kuznets-reflection">
+      <h3>What did we produce?</h3>
+      <p>Across all of these regimes, your industry produced thingamabobs. In a real economy, some of that output would be essential goods people depend on &mdash; healthcare, food, housing, sanitation &mdash; while others would be luxuries, planned-obsolescence electronics, or positional consumption that adds little to anyone's wellbeing.</p>
+      <p>The Total Economic Output figure above does not distinguish between these. Should it?</p>
+    </div>
+    ${renderDiscussionCard(state.config)}
+    ${renderComparisonTable(completed, REGIME_LABELS)}`;
 }
 
 /* ── Interactive calculator logic ── */
@@ -722,8 +707,8 @@ window.playApp = {
       Permit value (production basis, your assignment): <strong>${fmtMoney(permitValue)}</strong>
       (${fmt(upp)} units &times; ${fmtMoney(config.profitPerUnit)}/unit).
       ${capitalNote}
-      If you <strong>sell</strong> at ${fmtMoney(price)} vs that production baseline: ${gainFromSelling >= 0 ? 'gain' : 'loss'} of <strong>${fmtMoney(Math.abs(gainFromSelling))}</strong>.<br>
-      If you <strong>buy</strong> at ${fmtMoney(price)}: ${gainFromBuying >= 0 ? 'gain' : 'loss'} of <strong>${fmtMoney(Math.abs(gainFromBuying))}</strong> vs that baseline.
+      <p>If you <strong>sell</strong> at ${fmtMoney(price)} vs that production baseline: ${gainFromSelling >= 0 ? 'gain' : 'loss'} of <strong>${fmtMoney(Math.abs(gainFromSelling))}</strong>.</p>
+      <p>If you <strong>buy</strong> at ${fmtMoney(price)}: ${gainFromBuying >= 0 ? 'gain' : 'loss'} of <strong>${fmtMoney(Math.abs(gainFromBuying))}</strong> vs that baseline.</p>
     `;
   },
 
@@ -739,6 +724,13 @@ window.playApp = {
       } else {
         const k = String(FIRM_ID);
         cleantechRemoteByRegime[regime] = { ...getCleantechClaims(regime), [k]: true };
+        const fd = state.regimeData[regime].firms[FIRM_ID];
+        if (!fd.cleanTech) {
+          fd.cleanTech = true;
+          fd.cleanTechInvestment = state.config.cleanTechCost;
+          fd.capital -= state.config.cleanTechCost;
+          fd.totalProfit -= state.config.cleanTechCost;
+        }
         render();
       }
     } catch (e) {

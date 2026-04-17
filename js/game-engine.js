@@ -494,10 +494,11 @@ export function processPermitTrade(state, regime, seller, buyer, qty, price) {
   const buyerFd = d.firms[buyer];
 
   if (seller === buyer) return { error: 'Seller and buyer must be different firms.' };
-  if (qty <= 0) return { error: 'Permits traded must be at least 1.' };
+  if (qty <= 0) return { error: 'Trade quantity must be positive.' };
   if (price < 0) return { error: 'Price cannot be negative.' };
-  if (sellerFd.permits < qty) {
-    return { error: `Seller does not hold enough permits (has ${sellerFd.permits}, needs ${qty}).` };
+  const sellerRemaining = permitsRemaining(sellerFd);
+  if (sellerRemaining < qty - 0.001) {
+    return { error: `Seller does not have enough unused permits (has ${Math.floor(sellerRemaining * 100) / 100} unused, needs ${qty}).` };
   }
   const totalCost = qty * price;
   if (buyerFd.capital < totalCost) {
@@ -534,22 +535,40 @@ export function completeRegime(state, regime) {
   }
 }
 
-/* ── Deadweight loss ── */
+/* ── Cross-regime comparison metrics ──
+ *
+ * Two separate metrics replace the earlier single "climate efficiency" ratio,
+ * which was mathematically degenerate under the game's linear cost structure
+ * (every non-tax regime produced the same profit-per-ppm constant) and the
+ * even earlier deadweight-loss metric, which implicitly treated the
+ * unconstrained free market as the ideal benchmark.
+ *
+ * Presenting output and climate impact as two separate columns keeps the
+ * trade-off visible without collapsing it into a single, opaque or
+ * degenerate number, and without encoding a particular normative weighting.
+ */
 
-export function computeDeadweightLoss(state, regime) {
+/* Total economic output: firm profit + tax revenue. Tax revenue counts
+ * because it represents output value redirected to the public sector, not
+ * output destroyed. Returns null when no rounds have been played. */
+export function computeTotalEconomicOutput(state, regime) {
   const d = state.regimeData[regime];
-  if (!d || d.rounds.length === 0) return 0;
+  if (!d || d.rounds.length === 0) return null;
+  const totalProfit = d.firms.reduce((s, f) => s + f.totalProfit, 0);
+  return totalProfit + (d.totalTaxRevenue || 0);
+}
 
-  const actualProfit = d.firms.reduce((s, f) => s + f.totalProfit, 0);
-  const fmData = state.regimeData.freemarket;
-  if (fmData && fmData.rounds.length > 0) {
-    const fmProfit = fmData.firms.reduce((s, f) => s + f.totalProfit, 0);
-    return Math.max(0, Math.round(fmProfit - actualProfit));
-  }
-
-  const maxUnconstrained = state.config.numFirms * state.config.startCapital
-    * (Math.pow(2, state.config.numRounds) - 1);
-  return Math.max(0, Math.round(maxUnconstrained - actualProfit));
+/* Carbon budget used: ppm added as a percentage of the safe carbon budget
+ * (triggerPpm - startPpm). Values above 100 indicate overshoot of the safe
+ * threshold. Returns null when no rounds have been played or when the budget
+ * is zero/negative. */
+export function computeBudgetUsed(state, regime) {
+  const d = state.regimeData[regime];
+  if (!d || d.rounds.length === 0) return null;
+  const budget = state.config.triggerPpm - state.config.startPpm;
+  if (budget <= 0) return null;
+  const ppmAdded = d.ppm - state.config.startPpm;
+  return (ppmAdded / budget) * 100;
 }
 
 /* ── Undo last round ── */

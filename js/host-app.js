@@ -5,7 +5,7 @@
 import {
   buildConfig, createInitialState, initRegimeData, REGIMES, REGIME_LABELS,
   processRound, processPermitTrade, completeRegime,
-  computeDeadweightLoss, undoLastRound, defaultPermitsPerFirm,
+  computeTotalEconomicOutput, computeBudgetUsed, undoLastRound, defaultPermitsPerFirm,
   maxAllowedProduction, maxAffordable, unitsPerPermit, permitsRemaining,
   maxProductionFromPermits, normalizeStateFromRemote, totalTaxPaidByFirm,
   regimeSequence, nextRegimeAfter, previousRegimeInSession, resizeFirmsList,
@@ -22,7 +22,9 @@ import {
   fmt, fmtMoney, renderCO2Meter, firmColor, cleanBadge,
   regimeUsesCleanTech, regimeUsesTax, regimeUsesPermits, regimeHasCap,
   regimeHasPermitMarket, qrCodeUrl, regimeDescription, debriefPrompt,
-  ppmContext, dwlAnalogy, facilitatorNotes, onboardingGuide,
+  outputBudgetAnalogy, formatTotalEconomicOutput, formatBudgetUsed, budgetUsedStyle,
+  facilitatorNotes, onboardingGuide, renderRoundHistory, renderCO2Extra,
+  renderDiscussionCard, renderComparisonTable,
 } from './ui-helpers.js';
 
 /* ── Globals ── */
@@ -43,6 +45,7 @@ let cleantechUnsub = null;
 let cleantechKey = null;
 let roundFormErrorsByRegime = {};
 let tradeFormErrorsByRegime = {};
+let hostDebriefRegime = null;
 
 /**
  * RTDB `cleantech/{regime}` snapshots, keyed by regime.
@@ -109,6 +112,18 @@ function mountResultsCharts() {
       tension: 0.15,
       fill: false,
     };
+  });
+
+  ppmDatasets.push({
+    label: `Catastrophe threshold (${state.config.triggerPpm} ppm)`,
+    data: Array(ppmLabels.length).fill(state.config.triggerPpm),
+    borderColor: '#c0392b',
+    borderWidth: 2,
+    borderDash: [8, 4],
+    pointRadius: 0,
+    backgroundColor: 'transparent',
+    fill: false,
+    tension: 0,
   });
 
   const elPpm = document.getElementById('chartPpmByRound');
@@ -363,12 +378,6 @@ window.hostApp = {
   async submitRound(regime) {
     const d = state.regimeData[regime];
     bakeCleanTechIntoState(regime);
-    const revealKey = String(d.currentRound);
-    if (!d.revealedRounds || !d.revealedRounds[revealKey]) {
-      roundFormErrorsByRegime[regime] = 'Reveal submissions before processing the round.';
-      render();
-      return;
-    }
     const production = [];
     for (let i = 0; i < state.config.numFirms; i++) {
       const el = document.getElementById(`prod-${regime}-${i}`);
@@ -400,13 +409,14 @@ window.hostApp = {
     console.log(`[HOST] submitRound: synced, submissionKey reset — listenForSubmissions will rebind on next onStateChange`);
   },
 
-  revealSubmissions(regime) {
-    const d = state.regimeData[regime];
-    if (!d) return;
-    if (!d.revealedRounds || typeof d.revealedRounds !== 'object') d.revealedRounds = {};
-    d.revealedRounds[String(d.currentRound)] = true;
-    delete roundFormErrorsByRegime[regime];
-    sync();
+  goToDebrief(regime) {
+    hostDebriefRegime = regime;
+    render();
+  },
+
+  backToRegime(regime) {
+    hostDebriefRegime = null;
+    render();
   },
 
   startDebrief(regime) {
@@ -417,6 +427,7 @@ window.hostApp = {
 
   completeAndAdvance(regime, next) {
     bakeCleanTechIntoState(regime);
+    hostDebriefRegime = null;
     state.regimeData[regime].debriefActive = false;
     if (proposalUnsub) { proposalUnsub(); proposalUnsub = null; proposalRegime = null; }
     currentProposals = {};
@@ -595,7 +606,11 @@ function render() {
     case 'results': content.innerHTML = renderResults(); break;
     default:
       if (sessionRegimes().includes(state.regime)) {
-        content.innerHTML = renderRegime(state.regime);
+        if (hostDebriefRegime === state.regime) {
+          content.innerHTML = renderHostDebrief(state.regime);
+        } else {
+          content.innerHTML = renderRegime(state.regime);
+        }
       } else {
         content.innerHTML = `<div class="card"><h2>Unrecognised game state</h2><p>Regime is <code>${String(state.regime)}</code>. Try resetting the game or creating a new room.</p><button class="btn btn-primary" onclick="window.hostApp.resetGame()">Reset Game</button></div>`;
       }
@@ -719,21 +734,6 @@ function renderIndustryTotals(regime, d, config) {
     </div>`;
 }
 
-function renderCatastropheNotice(d, config) {
-  if (!d.catastrophe) return '';
-  const ctx = ppmContext(d.ppm);
-  return `
-    <div class="catastrophe-overlay card" role="alert" aria-live="assertive">
-      <h3>Catastrophe threshold breached</h3>
-      <p>
-        Emissions exceeded the safe limit of <strong>${fmt(config.triggerPpm)} ppm</strong>.
-        Firms may continue producing this regime, mirroring how real-world economies
-        continue operating despite overshooting climate targets.
-      </p>
-      <p class="catastrophe-context">${ctx.description}</p>
-    </div>`;
-}
-
 /* ── Generic regime renderer ── */
 
 function renderRegime(regime) {
@@ -752,18 +752,27 @@ function renderRegime(regime) {
 
   const fnotes = facilitatorNotes(regime);
   let fnotesHtml = '';
-  if (fnotes) {
-    fnotesHtml = `
-      <details class="facilitator-notes">
-        <summary>Facilitator Notes — ${REGIME_LABELS[regime]}</summary>
-        <div class="fn-body">
+  const _output = computeTotalEconomicOutput(state, regime);
+  const _budgetUsed = computeBudgetUsed(state, regime);
+  const efficiencyAnalog = outputBudgetAnalogy(_output, _budgetUsed);
+  const analogSection = efficiencyAnalog
+    ? `<div class="efficiency-analogy-box" style="margin-top:1rem;"><p>${efficiencyAnalog}</p></div>`
+    : '';
+  if (fnotes || efficiencyAnalog) {
+    const fnotesBody = fnotes ? `
           <p><strong>Timing:</strong> ${fnotes.timing}</p>
           <p><strong>Key points:</strong></p>
           <ul>${fnotes.keyPoints.map(p => `<li>${p}</li>`).join('')}</ul>
           <p><strong>Expected dynamics:</strong></p>
           <ul>${fnotes.expectedDynamics.map(p => `<li>${p}</li>`).join('')}</ul>
           <p><strong>Debrief tips:</strong></p>
-          <ul>${fnotes.debriefTips.map(p => `<li>${p}</li>`).join('')}</ul>
+          <ul>${fnotes.debriefTips.map(p => `<li>${p}</li>`).join('')}</ul>` : '';
+    fnotesHtml = `
+      <details class="facilitator-notes">
+        <summary>Facilitator Notes — ${REGIME_LABELS[regime]}</summary>
+        <div class="fn-body">
+          ${fnotesBody}
+          ${analogSection}
         </div>
       </details>`;
   }
@@ -774,9 +783,8 @@ function renderRegime(regime) {
       <div class="info-box accent">${regimeDescription(regime, config)}</div>
     </div>
     ${fnotesHtml}
-    ${renderCO2Meter(d.ppm, config, isTax ? `<div style="margin-top:0.4rem;font-size:0.85rem;">Tax revenue: <strong>${fmtMoney(d.totalTaxRevenue)}</strong></div>` : '')}
-    ${renderIndustryTotals(regime, d, config)}
-    ${renderCatastropheNotice(d, config)}
+    ${!roundDone ? renderCO2Meter(d.ppm, config, renderCO2Extra(d.ppm, config, isTax ? `<div style="margin-top:0.4rem;font-size:0.85rem;">Tax revenue: <strong>${fmtMoney(d.totalTaxRevenue)}</strong></div>` : '')) : ''}
+    ${!roundDone ? renderIndustryTotals(regime, d, config) : ''}
   `;
 
   if (usesClean && d.currentRound === 0 && d.rounds.length === 0) {
@@ -796,7 +804,7 @@ function renderRegime(regime) {
   }
 
   if (d.rounds.length > 0) {
-    html += renderRoundHistory(regime, d);
+    html += renderRoundHistory(regime, d, state.firms, state.config, null);
     if (d.rounds.length > 0 && !roundDone) {
       html += `<div class="card text-center">
         <button class="btn btn-outline btn-sm" onclick="window.hostApp.undoRound('${regime}')">
@@ -807,7 +815,12 @@ function renderRegime(regime) {
   }
 
   if (roundDone) {
-    html += renderRegimeSummary(regime, d, config, nextRegime, nextLabel);
+    html += `<div class="card text-center">
+      <p style="margin-bottom:0.75rem;color:var(--text-secondary);">All ${config.numRounds} rounds complete.</p>
+      <button class="btn btn-primary btn-block" onclick="window.hostApp.goToDebrief('${regime}')" style="font-size:1rem;padding:0.7rem;">
+        View Regime Summary &amp; Debrief &rarr;
+      </button>
+    </div>`;
   }
 
   return html;
@@ -950,8 +963,6 @@ function renderProductionInput(regime, d, config) {
   const usesClean = regimeUsesCleanTech(regime);
   const roundNum = d.currentRound + 1;
   const totalSubmitted = Object.keys(currentSubmissions).length;
-  const revealKey = String(d.currentRound);
-  const submissionsRevealed = !!(d.revealedRounds && d.revealedRounds[revealKey]);
   const roundError = roundFormErrorsByRegime[regime] || '';
 
   return `
@@ -968,7 +979,7 @@ function renderProductionInput(regime, d, config) {
           const fdEff = hasCT ? { ...fd, cleanTech: true } : fd;
           const maxAllowed = maxAllowedProduction(fdEff, config, regime);
           const sub = currentSubmissions[i];
-          const prefilledVal = (submissionsRevealed && sub) ? sub.quantity : 0;
+          const prefilledVal = sub ? sub.quantity : 0;
           const techBadge = usesClean ? cleanBadge(fdEff) : '';
           let extraInfo = `Capital: ${fmtMoney(fd.capital)}`;
           if (isCaC) extraInfo += ` | Cap: ${fmt(config.cacCap)}`;
@@ -982,21 +993,14 @@ function renderProductionInput(regime, d, config) {
             <div class="firm-name" style="color:${firmColor(i)}">${f.name} ${techBadge}</div>
             <div style="font-size:0.78rem;color:var(--text-secondary);">${extraInfo}</div>
             ${sub
-              ? (submissionsRevealed
-                ? `<span class="submission-status received">Submitted: ${fmt(sub.quantity)}</span>`
-                : '<span class="submission-status received">Submitted (hidden until reveal)</span>')
+              ? `<span class="submission-status received">Submitted: ${fmt(sub.quantity)}</span>`
               : '<span class="submission-status pending">Waiting…</span>'}
             <input type="number" id="prod-${regime}-${i}" min="0" max="${maxAllowed}"
-                   value="${prefilledVal}" style="margin-top:0.3rem;" step="1" inputmode="numeric" pattern="[0-9]*">
+                   value="${prefilledVal}" style="margin-top:0.3rem;" step="1" inputmode="numeric" pattern="[0-9]*" onkeydown="if(event.key==='Enter')window.hostApp.submitRound('${regime}')">
           </div>`;
         }).join('')}
       </div>
       ${roundError ? `<div class="form-error mt-1">${roundError}</div>` : ''}
-      <div class="mt-1">
-        <button class="btn btn-outline btn-block" onclick="window.hostApp.revealSubmissions('${regime}')">
-          ${submissionsRevealed ? 'Submissions revealed' : 'Reveal submissions'}
-        </button>
-      </div>
       <div class="mt-1">
         <button class="btn btn-success btn-block" onclick="window.hostApp.submitRound('${regime}')">
           Submit Round ${roundNum}
@@ -1005,46 +1009,7 @@ function renderProductionInput(regime, d, config) {
     </div>`;
 }
 
-/* ── Round history ── */
-
-function renderRoundHistory(regime, d) {
-  const rows = d.rounds.map((r, ri) => {
-    const firmCells = state.firms.map((_, fi) => {
-      const prod = Number(r.production?.[fi]) || 0;
-      const profit = Number(r.profitByFirm?.[fi]) || 0;
-      return `<td class="num">${fmt(prod)}<div class="sub-cell-note">${fmtMoney(profit)}</div></td>`;
-    }).join('');
-    const capitalStartTotal = typeof r.capitalStartTotal === 'number'
-      ? r.capitalStartTotal
-      : (Array.isArray(r.capitalStart) ? r.capitalStart.reduce((s, v) => s + (Number(v) || 0), 0) : 0);
-    return `<tr>
-      <td>R${ri + 1}</td>
-      <td class="num">${fmtMoney(capitalStartTotal)}</td>
-      ${firmCells}
-      <td class="num">${fmt(r.totalProduction)}</td>
-      <td class="num">${fmtMoney(typeof r.totalProfit === 'number' ? r.totalProfit : 0)}</td>
-      <td class="num">${fmt(r.ppmAfter)}</td>
-    </tr>`;
-  }).join('');
-
-  return `
-    <div class="card">
-      <h3>Production History</h3>
-      <table>
-        <thead>
-          <tr>
-            <th></th>
-            <th class="num">Start capital (industry)</th>
-            ${state.firms.map(f => `<th class="num">${f.name}<div class="sub-cell-note">Prod / Profit</div></th>`).join('')}
-            <th class="num">Total prod.</th>
-            <th class="num">Round profit</th>
-            <th class="num">CO\u2082</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>`;
-}
+/* ── Round history — now uses shared renderRoundHistory from ui-helpers.js ── */
 
 /* ── Regime summary ── */
 
@@ -1090,16 +1055,22 @@ function renderRegimeSummary(regime, d, config, nextRegime, nextLabel) {
     }
   }
 
-  let dwlHtml = '';
-  if (regime !== 'freemarket') {
-    const dwl = computeDeadweightLoss(state, regime);
-    dwlHtml = `
-      <div class="dwl-box">
-        <div class="dwl-label">Deadweight Loss (vs. free market)</div>
-        <div class="dwl-value">${fmtMoney(dwl)}</div>
-        <div class="dwl-label">Output foregone inside the same climate budget</div>
-      </div>`;
-  }
+  const output = computeTotalEconomicOutput(state, regime);
+  const budgetUsed = computeBudgetUsed(state, regime);
+  const budgetCellStyle = budgetUsedStyle(budgetUsed);
+  const efficiencyHtml = `
+    <div class="efficiency-box">
+      <div class="efficiency-metric">
+        <div class="efficiency-label">Total Economic Output</div>
+        <div class="efficiency-value">${formatTotalEconomicOutput(output)}</div>
+        <div class="efficiency-label">Firm profit + tax revenue</div>
+      </div>
+      <div class="efficiency-metric"${budgetCellStyle ? ` style="${budgetCellStyle}border-radius:0.5rem;padding:0.5rem;"` : ''}>
+        <div class="efficiency-label">% of Safe Carbon Budget Used</div>
+        <div class="efficiency-value">${formatBudgetUsed(budgetUsed)}</div>
+        <div class="efficiency-label"><i> (treating 450 ppm as the "safe" carbon budget)</i></div>
+      </div>
+    </div>`;
 
   let taxHtml = '';
   if (isTax) {
@@ -1118,25 +1089,7 @@ function renderRegimeSummary(regime, d, config, nextRegime, nextLabel) {
       </div>`;
   }
 
-  const ppmCtx = ppmContext(d.ppm);
-  const ppmContextHtml = `
-    <div class="ppm-context-box" style="border-color:${ppmCtx.colour};">
-      <div class="ppm-context-level" style="color:${ppmCtx.colour};">${ppmCtx.level}</div>
-      <p>${ppmCtx.description}</p>
-      <div class="ppm-context-source">Source: IPCC AR6 Synthesis Report (2023)</div>
-    </div>`;
-
-  let dwlAnalogHtml = '';
-  if (regime !== 'freemarket') {
-    const dwl = computeDeadweightLoss(state, regime);
-    const analog = dwlAnalogy(dwl, totalProfit);
-    if (analog) {
-      dwlAnalogHtml = `
-        <div class="dwl-analogy-box">
-          <p>${analog}</p>
-        </div>`;
-    }
-  }
+  const co2MeterHtml = renderCO2Meter(d.ppm, config, renderCO2Extra(d.ppm, config));
 
   const isDebriefActive = d.debriefActive;
   const prompt = debriefPrompt(regime);
@@ -1215,13 +1168,61 @@ function renderRegimeSummary(regime, d, config, nextRegime, nextLabel) {
         <span class="stat-value">${d.catastrophe ? 'Yes' : 'No'}</span></div>
       ${taxHtml}
       ${marketHtml}
-      ${ppmContextHtml}
-      ${dwlHtml}
-      ${dwlAnalogHtml}
+      ${co2MeterHtml}
+      ${efficiencyHtml}
       ${debriefHtml}
       ${nextPreview}
       ${advanceHtml}
     </div>`;
+}
+
+/* ── Host debrief (separate screen, mirrors solo-app pattern) ── */
+
+function renderHostDebrief(regime) {
+  const d = state.regimeData[regime];
+  if (!d) return '';
+  const config = state.config;
+  const nextRegime = nextRegimeAfter(config, regime);
+  const nextLabel = nextRegime === 'results' ? 'Results' : REGIME_LABELS[nextRegime];
+
+  let html = '';
+
+  const efficiencyAnalog = outputBudgetAnalogy(
+    computeTotalEconomicOutput(state, regime),
+    computeBudgetUsed(state, regime),
+  );
+  const fnotes = facilitatorNotes(regime);
+  if (fnotes || efficiencyAnalog) {
+    const fnotesBody = fnotes ? `
+      <p><strong>Timing:</strong> ${fnotes.timing}</p>
+      <p><strong>Key points:</strong></p>
+      <ul>${fnotes.keyPoints.map(p => `<li>${p}</li>`).join('')}</ul>
+      <p><strong>Expected dynamics:</strong></p>
+      <ul>${fnotes.expectedDynamics.map(p => `<li>${p}</li>`).join('')}</ul>
+      <p><strong>Debrief tips:</strong></p>
+      <ul>${fnotes.debriefTips.map(p => `<li>${p}</li>`).join('')}</ul>` : '';
+    const analogSection = efficiencyAnalog
+      ? `<div class="efficiency-analogy-box" style="margin-top:1rem;"><p>${efficiencyAnalog}</p></div>`
+      : '';
+    html += `<details class="facilitator-notes">
+      <summary>Facilitator Notes — ${REGIME_LABELS[regime]}</summary>
+      <div class="fn-body">${fnotesBody}${analogSection}</div>
+    </details>`;
+  }
+
+  html += renderRegimeSummary(regime, d, config, nextRegime, nextLabel);
+
+  if (d.rounds.length > 0) {
+    html += renderRoundHistory(regime, d, state.firms, config, null);
+  }
+
+  html += `<div class="card text-center mt-1">
+    <button class="btn btn-outline" onclick="window.hostApp.backToRegime('${regime}')">
+      &larr; Back to Round View
+    </button>
+  </div>`;
+
+  return html;
 }
 
 /* ── Results ── */
@@ -1235,17 +1236,16 @@ function renderResults() {
   const rows = completed.map(r => {
     const d = state.regimeData[r];
     const totalProd = d.firms.reduce((s, f) => s + f.totalProduced, 0);
-    const totalProfit = d.firms.reduce((s, f) => s + f.totalProfit, 0);
-    const dwl = r === 'freemarket' ? '\u2014' : fmtMoney(computeDeadweightLoss(state, r));
-    const taxRev = r === 'tax' ? fmtMoney(d.totalTaxRevenue) : '\u2014';
+    const output = computeTotalEconomicOutput(state, r);
+    const budgetUsed = computeBudgetUsed(state, r);
+    const budgetStyle = budgetUsedStyle(budgetUsed);
     return `<tr>
       <td><strong>${REGIME_LABELS[r]}</strong></td>
       <td class="num">${fmt(totalProd)}</td>
       <td class="num">${fmt(d.ppm)}</td>
       <td class="num">${d.catastrophe ? 'Yes' : 'No'}</td>
-      <td class="num">${fmtMoney(totalProfit)}</td>
-      <td class="num">${dwl}</td>
-      <td class="num">${taxRev}</td>
+      <td class="num">${formatTotalEconomicOutput(output)}</td>
+      <td class="num"${budgetStyle ? ` style="${budgetStyle}"` : ''}>${formatBudgetUsed(budgetUsed)}</td>
     </tr>`;
   }).join('');
 
@@ -1261,13 +1261,14 @@ function renderResults() {
     <div class="card">
       <h2>Cross-Regime Comparison</h2>
       <table>
-        <thead><tr><th>Regime</th><th class="num">Total Prod.</th><th class="num">Final ppm</th><th class="num">Catastrophe?</th><th class="num">Total Profit</th><th class="num">DWL</th><th class="num">Tax Rev.</th></tr></thead>
+        <thead><tr><th>Regime</th><th class="num">Total Prod.</th><th class="num">Final ppm</th><th class="num">Catastrophe?</th><th class="num">Total Economic Output</th><th class="num">Budget Used</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
+      <p style="font-size:0.8rem;color:var(--text-secondary);margin-top:0.5rem;">Total Economic Output = firm profit + tax revenue collected by government. Budget Used = ppm added as a percentage of the safe carbon budget; values above 100% indicate overshoot of the catastrophe trigger.</p>
     </div>
 
     <div class="card">
-      <h3>Profit by firm across regimes</h3>
+      <h3>Profit by Firm Across Regimes</h3>
       <table>
         <thead><tr><th>Firm</th>${completed.map(r => `<th class="num">${REGIME_LABELS[r]}</th>`).join('')}</tr></thead>
         <tbody>${firmCompRows}</tbody>
@@ -1287,30 +1288,14 @@ function renderResults() {
       </div>
     </div>
 
-    <div class="card">
-      <h2>Discussion</h2>
-      <div class="debrief-box" style="background:#eaf2f8;border-color:#aed6f1;">
-        <h3 style="color:#2471a3;">Material Viability</h3>
-        <ul>
-          <li>Which approach actually kept us under ${state.config.triggerPpm} ppm?</li>
-          <li>Carbon tax gives price certainty but quantity uncertainty. A cap gives quantity certainty; adding trade reallocates permits.</li>
-        </ul>
-      </div>
-      <div class="debrief-box" style="background:#fef5e7;border-color:#f9e2b0;">
-        <h3 style="color:#e67e22;">Normative Desirability</h3>
-        <ul>
-          <li>Which approach distributed costs most fairly? Who bore the greatest burden?</li>
-          <li>A just distribution requires people to bear the true costs of their own plans to other people. Did any approach achieve this?</li>
-        </ul>
-      </div>
-      <div class="debrief-box" style="background:#fdf2f2;border-color:#f5c6cb;">
-        <h3 style="color:#c0392b;">Political Feasibility</h3>
-        <ul>
-          <li>Which approach was most vulnerable to gaming, lobbying, and manipulation?</li>
-          <li>If firms can lobby to weaken the cap, or the tax is set too low, can any pricing mechanism actually work as designed?</li>
-        </ul>
-      </div>
+    <div class="kuznets-reflection">
+      <h3>What did we produce?</h3>
+      <p>Across all of these regimes, your industry produced thingamabobs. In a real economy, some of that output would be essential goods people depend on &mdash; healthcare, food, housing, sanitation &mdash; while others would be luxuries, planned-obsolescence electronics, or positional consumption that adds little to anyone's wellbeing.</p>
+      <p>The Total Economic Output figure above does not distinguish between these. Should it?</p>
     </div>
+
+    ${renderDiscussionCard(state.config)}
+    ${renderComparisonTable(completed, REGIME_LABELS)}
 
     <div class="card text-center">
       <button class="btn btn-primary" onclick="window.hostApp.resetGame()">Reset Game</button>

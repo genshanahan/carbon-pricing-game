@@ -92,19 +92,119 @@ footer.attribution a { color: var(--accent); }
 /* ── CO₂ meter ── */
 
 .co2-meter {
-  background: var(--card); border: 2px solid var(--border); border-radius: 0.75rem;
+  background: #eef6f4; border: 2px solid #2e8b7a; border-radius: 0.75rem;
   padding: 1rem; text-align: center; margin-bottom: 1rem;
 }
 .co2-meter .ppm-value { font-size: 2.8rem; font-weight: 700; line-height: 1.1; }
 .co2-meter .ppm-label { font-size: 0.85rem; color: var(--text-secondary); }
-.co2-meter.danger { border-color: var(--danger); }
+.co2-meter.danger { border-color: var(--danger); background: #fdf2f0; }
 .co2-meter.danger .ppm-value { color: var(--danger); }
-.co2-bar { height: 18px; background: #ecf0f1; border-radius: 9px; overflow: hidden; margin: 0.6rem 0; }
-.co2-bar-fill { height: 100%; border-radius: 9px; transition: width 0.4s ease; }
-.co2-bar-fill--low { background: #009E73; }
-.co2-bar-fill--mid { background: #F0E442; }
-.co2-bar-fill--high { background: #E69F00; }
-.co2-bar-fill--danger { background: #D55E00; }
+
+.co2-spectrum {
+  position: relative;
+  margin: 2.2rem 0 0.4rem;
+  padding-top: 1.3rem;
+}
+.co2-bands {
+  display: flex;
+  width: 100%;
+  height: 22px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.co2-band {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  transition: filter 0.15s;
+}
+.co2-band-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: rgba(0,0,0,0.78);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-shadow: 0 0 2px rgba(255,255,255,0.55);
+  padding: 0 0.2rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+.co2-trigger-line {
+  position: absolute;
+  top: 1.0rem;
+  bottom: -0.4rem;
+  width: 2px;
+  background: #1a1a2e;
+  transform: translateX(-1px);
+  z-index: 2;
+}
+.co2-trigger-line::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -3px;
+  width: 8px;
+  height: 8px;
+  background: #1a1a2e;
+  border-radius: 50%;
+}
+.co2-marker {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 3;
+  pointer-events: none;
+}
+.co2-marker-arrow {
+  font-size: 0.95rem;
+  color: var(--accent);
+  line-height: 1;
+}
+.co2-marker-value {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--card);
+  padding: 0 0.3rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--accent);
+  margin-top: -0.1rem;
+}
+.co2-meter.danger .co2-marker-arrow,
+.co2-meter.danger .co2-marker-value {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.co2-spectrum-axis {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 0.4rem;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  gap: 0.5rem;
+}
+.co2-axis-trigger {
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+  flex: 1;
+}
+.co2-spectrum-caption {
+  margin-top: 0.55rem;
+  font-size: 0.74rem;
+  font-style: italic;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  text-align: left;
+}
 
 .skip-link {
   position: absolute;
@@ -227,14 +327,26 @@ label { display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.2
 .clean-badge { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 0.8rem; font-size: 0.7rem; font-weight: 600; background: #e6f5f0; color: #006b50; border: 1px solid #009E73; }
 .dirty-badge { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 0.8rem; font-size: 0.7rem; font-weight: 600; background: #fdede6; color: #8b3a00; border: 1px solid #D55E00; }
 
-/* ── Deadweight loss box ── */
+/* ── Output + Budget summary box ── */
 
-.dwl-box {
-  background: #fff3e0; border: 2px solid #ffb74d; border-radius: 0.75rem;
-  padding: 1rem; text-align: center; margin-bottom: 1rem;
+.efficiency-box {
+  background: #fef9ec; border: 2px solid #d4a843; border-radius: 0.75rem;
+  padding: 1rem; margin-bottom: 1rem;
+  display: flex; gap: 1rem; flex-wrap: wrap;
 }
-.dwl-box .dwl-value { font-size: 2rem; font-weight: 700; color: var(--warn); }
-.dwl-box .dwl-label { font-size: 0.85rem; color: var(--text-secondary); }
+.efficiency-box .efficiency-metric {
+  flex: 1 1 200px; text-align: center; min-width: 0;
+}
+.efficiency-box .efficiency-value { font-size: 2rem; font-weight: 700; color: #7a5e10; }
+.efficiency-box .efficiency-label { font-size: 0.85rem; color: var(--text-secondary); }
+
+/* When a metric exceeds the safe budget, the inline style sets the .efficiency-metric
+ * background; the value text colour also flips to the warning colour so it stays legible. */
+.efficiency-box .efficiency-metric[style*="fde8e8"] .efficiency-value { color: #c0392b; }
+
+@media (max-width: 600px) {
+  .efficiency-box { flex-direction: column; gap: 0.5rem; }
+}
 
 /* ── Debrief boxes ── */
 
@@ -357,15 +469,50 @@ label { display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.2
   letter-spacing: 0.03em; margin-bottom: 0.4rem;
 }
 .ppm-context-box p { font-size: 0.88rem; line-height: 1.5; margin-bottom: 0.4rem; }
-.ppm-context-box .ppm-context-source {
-  font-size: 0.72rem; color: var(--text-secondary); font-style: italic; margin-top: 0.5rem;
+.ppm-context-box .ppm-context-source,
+.ppm-context-source {
+  font-size: 0.68rem; color: var(--text-secondary); font-style: italic; margin-top: 0.3rem;
 }
 
-/* ── Deadweight loss analogy ── */
+/* ── Output + Budget analogy ── */
 
-.dwl-analogy-box {
-  background: #fff8ed; border: 1px solid #f9e2b0; border-radius: 0.5rem;
+.efficiency-analogy-box {
+  background: #f4f9fc; border: 1px solid #cfe2f3; border-radius: 0.5rem;
   padding: 0.9rem; margin-bottom: 1rem; font-size: 0.88rem; line-height: 1.5;
+}
+
+/* ── Kuznets reflection panel (Results screen) ── */
+
+.kuznets-reflection {
+  background: #f8f4ff;
+  border: 2px solid #b39ddb;
+  border-radius: 0.75rem;
+  padding: 1.25rem 1.4rem;
+  margin-bottom: 1rem;
+}
+.kuznets-reflection h3 {
+  color: #4a148c;
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.kuznets-reflection p {
+  font-size: 0.92rem;
+  line-height: 1.55;
+  margin-bottom: 0.6rem;
+}
+.kuznets-reflection p:last-child {
+  margin-bottom: 0;
+}
+.kuznets-reflection .kuznets-pull {
+  font-weight: 600;
+  color: #4a148c;
+}
+.kuznets-reflection .kuznets-citation {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-style: italic;
 }
 
 /* ── Debrief / proposal UI ── */
@@ -427,6 +574,9 @@ label { display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.2
   .container { padding: 0.5rem; }
   header h1 { font-size: 1.15rem; }
   .co2-meter .ppm-value { font-size: 2rem; }
+  .co2-band-label { font-size: 0.55rem; letter-spacing: 0; }
+  .co2-marker-value { font-size: 0.65rem; }
+  .co2-spectrum-axis { font-size: 0.65rem; }
   .regime-nav { padding: 0.4rem 0.5rem; }
   .regime-nav-row { gap: 0.25rem; }
   .regime-btn { padding: 0.35rem 0.6rem; font-size: 0.75rem; }
@@ -452,6 +602,7 @@ label { display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.2
 .competitor-card {
   background: #fff8ef;
   border: 1px solid #f0d8a8;
+  text-align: center;
 }
 .competitor-card .competitor-heading {
   margin: 0 0 0.2rem;
@@ -465,6 +616,7 @@ label { display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.2
   color: var(--text-secondary);
   margin: 0 0 0.75rem;
 }
+.competitor-card .competitor-row { text-align: left; }
 .competitor-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -535,6 +687,13 @@ label { display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.2
   max-width: 520px;
   margin-left: auto;
   margin-right: auto;
+  text-align: center;
+}
+.calculator-box label,
+.calculator-box .calc-round-actuals,
+.calculator-box .fn-body,
+.calculator-box .calc-sim-toggle,
+.calculator-box .permit-value-explain {
   text-align: left;
 }
 .calculator-box h3 { font-size: 0.9rem; margin-bottom: 0.2rem; color: #2471a3; }

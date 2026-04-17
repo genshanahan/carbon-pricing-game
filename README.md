@@ -1,168 +1,87 @@
----
-created_date: 2026-04-14
-modified_date: 2026-04-15
----
+# The Carbon Pricing Simulation Game
 
-## The Carbon Pricing Simulation Game (V2)
+An interactive classroom simulation of five carbon regulation regimes — from free markets to cap and trade — designed for sustainability and business education.
 
-An interactive classroom simulation of five carbon regulation regimes - from free markets to cap & trade - designed for sustainability education.
+**[Try the solo demo](https://genshanahan.github.io/carbon-pricing-game/solo.html)** — no setup required. Play through all five regimes against AI firms in your browser.
 
-Adapted from *The Thingamabob Game* (Bigelow 2009), *The Carbon Emissions Game* (Sethi 2017), and *The Pollution Game* (Corrigan 2011). Extended by Dr Genevieve Shanahan, Cardiff Business School.
+**[Launch the facilitated version](https://genshanahan.github.io/carbon-pricing-game/)** — requires a free Firebase project for real-time sync between devices. See [SETUP.md](SETUP.md) for instructions.
 
-### Licence
+## Why this game exists
 
-This project is released under **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International** ([CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)). See the [`LICENSE`](LICENSE) file in this folder.
+Students on sustainability and business courses need to understand the orthodox economic logic behind carbon pricing before they can critically appraise it. But the underlying concepts — externalities, deadweight loss, permit markets, Pigouvian taxation — are abstract and difficult to internalise from readings alone. Students who cannot articulate *why* mainstream economists advocate carbon pricing are poorly equipped to engage with the critical perspectives that problematise it.
 
-GitHub’s “Choose a licence” dropdown does not list CC BY-NC-SA; choose **No licence** when creating the repository, then add the `LICENSE` file from this folder (or paste the [full legal code](https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode) if you prefer).
+This game addresses that gap. It walks students through five regulatory regimes using identical production arithmetic: each unit costs $1 to produce, sells for $2, and generates CO₂ emissions. The *only* thing that changes from regime to regime is the regulatory rule. Students feel each mechanism's logic directly — how the rule shapes incentives, redistributes costs, and determines whether the atmosphere survives.
 
-### How it works
+**The game deliberately encodes neoclassical economic orthodoxy.** It models the textbook story — market failure, command-and-control inefficiency, Pigouvian tax, Coasean permit trading — cleanly and simply. This is by design. The game provides the scaffolding students need to grasp the orthodox perspective, which in turn equips them to engage meaningfully with critical perspectives on carbon pricing (distributional justice, regulatory capture, political feasibility) through structured debriefs after each regime.
 
-A **facilitator** creates a game room (projected on-screen). **Students** join on their phones by scanning a QR code or entering a room code. The facilitator drives the game through five regulatory regimes; students see regime rules, use calculators to plan strategy, and submit production decisions digitally.
+## What students experience
 
-Real-time sync between devices is handled by Firebase Realtime Database (free tier).
+The session progresses through five regulatory regimes. Capital, costs, and revenue are reset at the start of each regime; the only variable is the rule.
 
-### Setup
+1. **Free Market** — No regulation. Firms compete to maximise profit. The historical pattern: rational profit-maximisation destroys the commons. Students articulate in their own words why unregulated prices fail to reflect the true costs of production.
 
-#### 1. Create a Firebase project
+2. **Command and Control** — A uniform production cap per firm. The atmosphere survives, but the flat cap wastes productive capacity. Students see the deadweight loss that motivates the efficiency critique behind market-based alternatives.
 
-1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Click **Add project** (any name, e.g. "carbon-pricing-game")
-3. Disable Google Analytics (not needed) and create
-4. Go to **Project Settings > General > Your apps** and click the web icon (`</>`)
-5. Register the app (any nickname) - do **not** enable Firebase Hosting
-6. Copy the `firebaseConfig` object
+3. **Carbon Tax** — A per-unit tax on emissions replaces the cap. Clean technology (limited slots, sunk investment) halves a firm's emissions and effective tax rate, introducing firm heterogeneity. Price signals redirect behaviour, but create winners and losers. Students confront the distributional consequences of incentive-based regulation.
 
-```
-<script type="module">
-  // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-analytics.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
+4. **Cap** — The tax is removed. The regulator issues a fixed number of emissions permits. Clean-tech firms can produce more per permit. Students experience the rigidity of a fixed allocation — some firms are permit-constrained while others have capacity to spare.
 
-  // Your web app's Firebase configuration
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-  const firebaseConfig = {
-    apiKey: "AIzaSyC8aLy5pMNi4dIuHQf-tlhkiLV2kRWLnK0",
-    authDomain: "carbon-pricing-game.firebaseapp.com",
-    projectId: "carbon-pricing-game",
-    storageBucket: "carbon-pricing-game.firebasestorage.app",
-    messagingSenderId: "955303771390",
-    appId: "1:955303771390:web:49093d49e79b33e756f9af",
-    measurementId: "G-NJJES76EWQ"
-  };
+5. **Cap and Trade** — Same permit mechanics, but firms may now buy and sell permits through bilateral negotiation. Permits flow to the highest-value users, and a market price emerges. Students see how trade reallocates emissions rights and discover the price the market produces.
 
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
-</script>
-```
+## Learning outcomes
 
-#### 2. Enable Realtime Database
+By the end of the session, students will have experienced:
 
-1. In the Firebase console, go to **Build > Realtime Database**
-2. Click **Create Database**
-3. Choose your region, then **Start in test mode** (for development)
-4. ==For production, replace the default rules with:
+- **Market failure** — how rational individual profit-maximisation can structurally produce collective harm (tragedy of the commons)
+- **Regulatory trade-offs** — how different regulatory instruments balance environmental effectiveness, economic efficiency, and distributional fairness differently
+- **Deadweight loss** — how uniform regulation can waste productive capacity, and why economists advocate price-based alternatives
+- **Incentive alignment** — how carbon taxes and permit markets redirect firm behaviour through price signals rather than quantity mandates
+- **Emergent market prices** — how bilateral permit trades produce a market price that reflects firms' underlying valuations
+- **Firm heterogeneity** — how clean technology investment changes the competitive landscape under each regime, creating winners and losers
+- **The scaffolding for critical appraisal** — a concrete, experience-based understanding of the orthodox economic case for carbon pricing, equipping students to engage with critiques of carbon markets, questions of distributional justice, and the political feasibility of regulatory design
 
-```json
-{
-  "rules": {
-    "rooms": {
-      "$roomId": {
-        ".read": true,
-        "state": { ".write": true },
-        "submissions": { ".write": true },
-        "debrief": { ".write": true },
-        "cleantech": { ".write": true },
-        "meta": { ".write": true }
-      }
-    }
-  }
-}
-```
+## How to use it
 
-**Troubleshooting `PERMISSION_DENIED` when creating a room:** Rules must allow `.write` on each of `state`, `submissions`, `debrief`, `cleantech`, and `meta` (see above). The app uses `update()` so those child rules apply; a parent-only `set()` on the whole room would also require `.write` on `$roomId` itself. Ensure `cleantech` is present if you added clean-tech claiming after an older rules deploy.
+### Facilitated mode (classroom)
 
-#### 3. Add your Firebase config
+The primary mode. A facilitator projects the host view on a classroom screen; students join on their phones by scanning a QR code or entering a room code. The facilitator drives the game through the five regimes, entering production decisions and processing rounds. Students see regime rules, use built-in calculators to plan strategy, and submit decisions from their devices. Real-time sync is handled by Firebase Realtime Database (free tier).
 
-Open `js/firebase-config.js` and replace the placeholder values with your project's config:
+**Duration:** ~90 minutes (game + debriefs), though this varies with class size and discussion depth.
 
-```javascript
-export const FIREBASE_CONFIG = {
-  apiKey: 'AIzaSy...',
-  authDomain: 'your-project.firebaseapp.com',
-  databaseURL: 'https://your-project-default-rtdb.firebaseio.com',
-  projectId: 'your-project',
-  storageBucket: 'your-project.appspot.com',
-  messagingSenderId: '123456789',
-  appId: '1:123456789:web:abc123',
-};
-```
+**Class size:** Designed for 3–8 firms of 2–3 students each. The facilitator can adjust the number of firms and rounds per regime at game creation.
 
-#### 4. Deploy
+**Setup:** You will need a free Firebase project for multi-device sync. See **[SETUP.md](SETUP.md)** for step-by-step instructions.
 
-The app is entirely static files - no build step, no server. Deploy to any static hosting:
+### Solo mode (self-study)
 
-**GitHub Pages:**
-1. Push the `v2/` folder to a GitHub repository
-2. Enable Pages in repo Settings > Pages (source: main branch, folder: `/`)
+Open **[solo.html](https://genshanahan.github.io/carbon-pricing-game/solo.html)** in any browser. No Firebase, no room code, no other players needed. You play as one firm alongside AI opponents that pursue profit-maximising strategies. Suitable for:
 
-~~**Netlify:**~~
-~~1. Drag the `v2/` folder onto [Netlify Drop](https://app.netlify.com/drop)~~
-~~https://enchanting-vacherin-22d1de.netlify.app/ ~~
+- Educators previewing the game before running it in class
+- Students preparing before a facilitated session
+- Individual learners exploring carbon pricing concepts independently
 
-**Local testing:** run these **in your Mac Terminal or the Cursor terminal**, on your machine (not on GitHub).
+## Adapts and extends
 
-You must `cd` into **this** folder — the one that contains `index.html` (named `v2` inside *Extended Thingamabob Game*). If your terminal starts in the AIS workspace root, use:
+This game adapts and extends three prior educational simulations:
 
-```bash
-cd "Documents/Carbon-Pricing-Game V2/GitHub/carbon-pricing-game"
-python3 -m http.server 8000
-```
+- **The Thingamabob Game** — Bigelow, B. (2015). The Thingamabob Game: A simulation on capitalism vs. the climate. In B. Bigelow & T. Swinehart (Eds.), *A people's curriculum for the earth: Teaching climate change and the environmental crisis*. Milwaukee, WI: Rethinking Schools. [PDF](https://hrwstf.org/wp-content/uploads/2025/08/thingamabob-game-capitalism-climate.pdf)
 
-Then open **http://localhost:8000** in a browser. Stop the server with **Ctrl+C** in that terminal.
+- **The Carbon Emissions Game** — Sethi, G. (2017). The Carbon Emissions Game. SERC InTeGrate. [Link](https://serc.carleton.edu/integrate/teaching_materials/carbon_emissions/unit6.html)
 
-If you are already inside the `v2` folder (e.g. you opened the terminal from that folder in Cursor), you only need:
+- **The Pollution Game** — Corrigan, J. R. (2011). The Pollution Game: A classroom game demonstrating the relative effectiveness of emissions taxes and tradable permits. *The Journal of Economic Education*, 42(1), 70–78. [doi:10.1080/00220485.2011.536491](https://doi.org/10.1080/00220485.2011.536491)
 
-```bash
-python3 -m http.server 8000
-```
+The key adaptation is simplification: the game strips out continuous marginal abatement cost curves in favour of a binary clean-technology toggle, keeping the arithmetic accessible to students without economics training while preserving the structural dynamics of each regulatory regime.
 
-(ES modules require a local server; opening `index.html` directly from the file system will not work.)
+## How to cite
 
-### Troubleshooting
+> Shanahan, G. (2026). *The Carbon Pricing Simulation Game* [Web application]. Cardiff Business School, Cardiff University. Available at: https://github.com/genshanahan/carbon-pricing-game
 
-**Facilitator page stuck on "Loading…"**
+## Licence
 
-- Create the room from **Create Game Room** on the landing page each time you test; opening `host.html?room=...` manually only works if that room already exists in Firebase Realtime Database under `rooms/<code>/state`.
-- In the Firebase console, open **Realtime Database → Data** and confirm `rooms → <your code> → state` exists.
-- Confirm `js/firebase-config.js` matches your project and that database **rules** allow read/write for `rooms` (see setup steps above).
+This project is released under **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International** ([CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)). See the [`LICENSE`](LICENSE) file for details.
 
-### File structure
+You are free to adapt and share this game for non-commercial educational purposes, provided you give appropriate credit and distribute any adaptations under the same licence.
 
-```
-v2/
-├── index.html           Landing page (create/join room)
-├── host.html            Facilitator view (projected)
-├── play.html            Student view (mobile)
-├── css/
-│   └── styles.css       Shared styles
-├── js/
-│   ├── firebase-config.js   Firebase project config (edit this)
-│   ├── game-engine.js       Pure game logic (no DOM, no Firebase)
-│   ├── firebase-sync.js     Firebase read/write abstraction
-│   ├── ui-helpers.js        Shared formatters & rendering
-│   ├── host-app.js          Facilitator UI logic
-│   └── play-app.js          Student UI logic
-└── README.md
-```
+## Contributing and feedback
 
-### Game flow
-
-1. Facilitator opens the landing page and clicks **Create Game Room**
-2. Room code and QR code appear - students scan to join
-3. Facilitator names firms and begins Round 1 (Free Market)
-4. Each round: students submit production decisions on their phones → facilitator processes the round → results update on all screens
-5. After each regime, facilitator advances to the next
-6. Final Results screen shows cross-regime comparison for class discussion
+Suggestions, bug reports, and pull requests are welcome. Please [open an issue](https://github.com/genshanahan/carbon-pricing-game/issues) or get in touch.

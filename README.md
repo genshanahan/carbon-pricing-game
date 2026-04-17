@@ -1,10 +1,14 @@
+---
+modified_date: 2026-04-17
+created_date: 2026-04-15
+---
 # The Carbon Pricing Simulation Game
 
 An interactive classroom simulation of five carbon regulation regimes — from free markets to cap and trade — designed for sustainability and business education.
 
-**[Try the solo demo](https://genshanahan.github.io/carbon-pricing-simulation-game/solo.html)** — no setup required. Play through all five regimes against AI firms in your browser.
+**[Try the solo demo](https://genshanahan.github.io/carbon-pricing-game/solo.html)** — no setup required. Play through all five regimes against AI firms in your browser.
 
-**[Launch the facilitated version](https://genshanahan.github.io/carbon-pricing-simulation-game/)** — requires a free Firebase project for real-time sync between devices. See [SETUP.md](SETUP.md) for instructions.
+**[Launch the facilitated version](https://genshanahan.github.io/carbon-pricing-game/)** — requires a free Firebase project for real-time sync between devices. See [SETUP.md](SETUP.md) for instructions.
 
 ## Why this game exists
 

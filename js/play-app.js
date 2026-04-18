@@ -269,10 +269,7 @@ function renderRegime(regime) {
   if (!roundDone) {
     ensureCalcSim(regime, fdEff, d.currentRound);
     html += renderCleanTechClaimCard(regime, d, fdEff, config);
-    html += renderCalculator(regime, fdEff, config, d);
-  }
 
-  if (!roundDone) {
     const roundKey = `${regime}_${d.currentRound}`;
     const alreadySubmitted = hasSubmitted[roundKey];
     const maxAllowed = maxAllowedProduction(fdEff, config, regime);
@@ -307,6 +304,8 @@ function renderRegime(regime) {
           </button>
         </div>`;
     }
+
+    html += renderCalculator(regime, fdEff, config, d);
   } else {
     if (d.debriefActive) {
       html += renderFirmSummary(regime, d, fd);

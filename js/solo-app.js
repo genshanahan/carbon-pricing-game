@@ -381,7 +381,6 @@ function renderPlayerInput(regime, d, config) {
     <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.6rem;">
       Maximum you can produce: <strong>${fmt(maxAllowed)}</strong>
     </p>
-    ${renderCalculator(regime, fd, config, d)}
     <div class="decision-block" style="margin-top:0.75rem;">
       <label for="soloProd" style="font-weight:600;">Your actual production decision:</label>
       <input type="number" id="soloProd" min="0" max="${maxAllowed}" placeholder="Enter units" step="1" inputmode="numeric" pattern="[0-9]*" onkeydown="if(event.key==='Enter')window.soloApp.submitRound('${regime}')">
@@ -392,6 +391,7 @@ function renderPlayerInput(regime, d, config) {
         Submit Round ${d.currentRound + 1}
       </button>
     </div>
+    ${renderCalculator(regime, fd, config, d)}
   </div>`;
 }
 
@@ -623,8 +623,6 @@ function renderTradePanel(regime, d, config) {
       <tbody>${holdingsRows}</tbody>
     </table>
 
-    ${tradeCalcBlock}
-
     <div style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid var(--border);">
       <h4 style="font-size:0.88rem;margin-bottom:0.5rem;">Propose a Trade</h4>
       <div class="two-col">
@@ -655,6 +653,7 @@ function renderTradePanel(regime, d, config) {
       <button class="btn btn-success" onclick="window.soloApp.proposeTrade('${regime}')">Propose Trade</button>
     </div>
     ${tradeLog}
+    ${tradeCalcBlock}
   </div>`;
 }
 

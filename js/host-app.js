@@ -24,7 +24,7 @@ import {
   regimeHasPermitMarket, qrCodeUrl, regimeDescription, debriefPrompt,
   outputBudgetAnalogy, formatTotalEconomicOutput, formatBudgetUsed, budgetUsedStyle,
   facilitatorNotes, onboardingGuide, renderRoundHistory, renderCO2Extra,
-  renderDiscussionCard, renderComparisonTable,
+  renderDiscussionCard, renderDiscussionFacilitatorHints, renderComparisonTable,
 } from './ui-helpers.js';
 
 /* ── Globals ── */
@@ -1295,6 +1295,7 @@ function renderResults() {
     </div>
 
     ${renderDiscussionCard(state.config)}
+    ${renderDiscussionFacilitatorHints('Facilitator')}
     ${renderComparisonTable(completed, REGIME_LABELS)}
 
     <div class="card text-center">

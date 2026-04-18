@@ -16,7 +16,7 @@ import {
   regimeUsesCleanTech, regimeUsesTax, regimeUsesPermits, regimeHasCap,
   regimeHasPermitMarket, regimeDescription, debriefPrompt,
   outputBudgetAnalogy, formatTotalEconomicOutput, formatBudgetUsed, budgetUsedStyle, facilitatorNotes,
-  renderRoundHistory, renderCO2Extra, renderDiscussionCard, renderComparisonTable,
+  renderRoundHistory, renderCO2Extra, renderDiscussionCard, renderDiscussionFacilitatorHints, renderComparisonTable,
 } from './ui-helpers.js';
 
 import {
@@ -936,6 +936,7 @@ function renderResultsScreen() {
     ${proposalReview}
     ${kuznetsHtml}
     ${discussionHtml}
+    ${renderDiscussionFacilitatorHints('Educator')}
     ${renderComparisonTable(completed, REGIME_LABELS)}
 
     <div class="card text-center">

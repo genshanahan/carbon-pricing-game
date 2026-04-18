@@ -331,7 +331,7 @@ export function renderCO2Extra(ppm, config, prefix = '') {
   const catastropheHtml = ppm >= config.triggerPpm
     ? `<div style="margin-top:0.6rem;padding:0.5rem 0.75rem;background:#fde8e8;border-radius:0.4rem;border-left:3px solid #c0392b;">
         <strong style="color:#c0392b;">Catastrophe threshold breached</strong>
-        <p style="font-size:0.83rem;margin:0.2rem 0 0;">Emissions exceeded the safe limit of <strong>${fmt2(config.triggerPpm)} ppm</strong>. Firms may continue producing this regime, mirroring how real-world economies continue operating after overshooting climate targets.</p>
+        <p style="font-size:0.83rem;margin:0.2rem 0 0;">Emissions exceeded the safe limit of <strong>${fmt2(config.triggerPpm)} ppm</strong>. Firms may continue producing under this regime, mirroring how real-world economies continue operating after overshooting climate targets.</p>
       </div>`
     : '';
   return `${prefix}
@@ -434,24 +434,63 @@ export function renderDiscussionCard(config) {
         <h3 style="color:#2471a3;">Material Viability</h3>
         <ul>
           <li>Which approach actually kept us under ${config.triggerPpm} ppm?</li>
-          <li>Carbon tax gives price certainty but quantity uncertainty. A cap gives quantity certainty; adding trade reallocates permits efficiently.</li>
+          <li>The game presupposes a catastrophe threshold of ${config.triggerPpm} ppm, corresponding to SSP2-4.5 and the Paris 2\u00b0C ceiling. But what uncertainties surround actual climate tipping points \u2014 and what human costs and moral trade-offs are baked into choosing <em>this</em> threshold?</li>
+          <li>A carbon tax gives certainty about the <em>price</em> of emissions but not the <em>quantity</em>. A cap gives certainty about the <em>quantity</em> but not the <em>price</em>. Which kind of uncertainty is more dangerous, and for whom?</li>
+          <li>What happens to each regime\u2019s effectiveness if our scientific understanding of the safe threshold changes mid-policy?</li>
         </ul>
       </div>
       <div class="debrief-box" style="background:#fef5e7;border-color:#f9e2b0;">
         <h3 style="color:#e67e22;">Normative Desirability</h3>
         <ul>
-          <li>Which approach distributed costs most fairly? Who bore the greatest burden?</li>
+          <li>Which approach distributed costs most fairly? Who bore the greatest burden \u2014 and who was protected?</li>
           <li>A just distribution requires people to bear the true costs of their own plans to other people. Did any approach achieve this?</li>
+          <li>Under the carbon tax, firms that could not afford clean technology bore a disproportionate cost. Is a thingamabob from a firm that cannot afford to go green the same as one from a firm that can?</li>
+          <li>The game does not represent all the people affected by these policy choices. Whose interests were absent from the table?</li>
         </ul>
       </div>
       <div class="debrief-box" style="background:#fdf2f2;border-color:#f5c6cb;">
         <h3 style="color:#c0392b;">Political Feasibility</h3>
         <ul>
           <li>Which approach was most vulnerable to gaming, lobbying, and manipulation?</li>
-          <li>If firms can lobby to weaken the cap, or the tax is set too low, can any pricing mechanism actually work as designed?</li>
+          <li>If firms can lobby to weaken the cap, or the tax is set too low because of political pressure, can any pricing mechanism actually work as designed?</li>
+          <li>Is command-and-control always necessarily bureaucratic and inefficient? Can you think of regulations that could be set directly by governments that would be effective?</li>
+          <li>What sustainability transition challenges are <em>not</em> represented in the game?</li>
+        </ul>
+      </div>
+      <div class="debrief-box" style="background:#f4f4f4;border-color:#bbb;">
+        <h3 style="color:#555;">The Game as an Ideological Artefact</h3>
+        <ul>
+          <li>This game was calibrated to tell a specific story about economically efficient regulation. What assumptions did the game\u2019s design build in, and how do those assumptions shape the conclusions you are likely to draw?</li>
+          <li>The game focuses attention on the relative <em>flexibility</em> of different policies. Is flexibility always desirable? Or are there cases where rigid rules produce better outcomes?</li>
+          <li>What are the relative advantages and disadvantages of the three carbon pricing regimes in terms of <strong>uncertainty</strong> regarding: existing and future technological developments; climate dynamics; political and economic dynamics?</li>
         </ul>
       </div>
     </div>`;
+}
+
+/**
+ * Facilitator/educator hints for the Discussion card questions.
+ * Collapsed by default; not shown on the player side (play-app).
+ * @param {string} label - "Educator" for solo-app, "Facilitator" for host-app
+ */
+export function renderDiscussionFacilitatorHints(label) {
+  const title = label || 'Educator';
+  return `
+    <details class="facilitator-notes">
+      <summary>${title} Discussion Notes</summary>
+      <div class="fn-body">
+        <p><strong>Political Feasibility prompts:</strong></p>
+        <ul>
+          <li><em>\u201cCan you think of effective government-set regulations?\u201d</em> \u2014 e.g. \u201cchoice editing\u201d that removes high-emission options from the market entirely (cf. 1.5-degree lifestyle report)</li>
+          <li><em>\u201cWhat transition challenges are not represented?\u201d</em> \u2014 e.g. political lobbying related to sunk-cost investments in fossil fuel / clean tech infrastructure; financialisation of permits through second-order trading, betting, hedging, and speculation; normative considerations re: distributive implications of different regimes</li>
+        </ul>
+        <p><strong>Ideological Artefact prompts:</strong></p>
+        <ul>
+          <li><em>\u201cIs flexibility always desirable?\u201d</em> \u2014 consider cases where rigid rules (bans, standards) produce more equitable outcomes than market mechanisms</li>
+          <li><em>\u201cUncertainty across regimes\u201d</em> \u2014 prompt students to distinguish between technological uncertainty, climate-science uncertainty, and political-economic uncertainty, and consider which regime handles each best/worst</li>
+        </ul>
+      </div>
+    </details>`;
 }
 
 /**

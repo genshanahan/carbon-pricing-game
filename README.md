@@ -68,7 +68,7 @@ The first regime is a straightforward implementation of **The Thingamabob Game**
 
 ## How to cite
 
-> Shanahan, G. (2026). *The Carbon Pricing Simulation Game* [Web application]. Cardiff Business School, Cardiff University. Available at: [https://github.com/genshanahan/carbon-pricing-simulation-game](https://github.com/genshanahan/carbon-pricing-simulation-game)
+> Shanahan, G. (2026). *The Carbon Pricing Simulation Game* [Web application]. Available at: [https://github.com/genshanahan/carbon-pricing-simulation-game](https://github.com/genshanahan/carbon-pricing-simulation-game)
 
 ## Licence
 

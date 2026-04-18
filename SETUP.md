@@ -1,14 +1,33 @@
 ---
-modified_date: 2026-04-17
+modified_date: 2026-04-18
 created_date: 2026-04-17
 ---
-# Setup Guide — Facilitated Mode
+# Setup Guide
 
-The **solo version** (`solo.html`) runs entirely in the browser with no external services. If that is all you need, no setup is required.
+## Solo mode — no setup required
 
-The **facilitated version** uses Firebase Realtime Database to sync game state between the facilitator's projected screen and students' phones in real time. This guide walks you through creating a Firebase project, configuring the app, and deploying it.
+Open **[solo.html](https://genshanahan.github.io/carbon-pricing-simulation-game/solo.html)** in any browser. Solo mode runs entirely in the browser with no external services.
 
-## 1. Create a Firebase project
+## Facilitated mode — using the hosted version (recommended)
+
+The hosted version at **[genshanahan.github.io/carbon-pricing-simulation-game](https://genshanahan.github.io/carbon-pricing-simulation-game/)** is ready to use with no setup. Real-time sync between the facilitator's screen and students' phones is handled by a shared Firebase backend.
+
+### How to run a session
+
+1. Open the [landing page](https://genshanahan.github.io/carbon-pricing-simulation-game/) on the computer you will project in class.
+2. Click **Create Game Room**. You will be taken to the facilitator view with a room code and QR code.
+3. Students join on their phones by scanning the QR code or entering the room code at the same landing page.
+4. Run the game through the five regimes. All decisions and state sync automatically across devices.
+
+That is it — no accounts, no downloads, no Firebase configuration on your part.
+
+---
+
+## Forking the repository (optional, advanced)
+
+If you want to run your own independent instance — for example, to customise the game or to use your own Firebase project — you can fork the repository and set up your own backend. Everything below applies **only** to forked/self-hosted instances.
+
+### 1. Create a Firebase project
 
 1. Go to [Firebase Console](https://console.firebase.google.com/)
 2. Click **Add project** (any name, e.g. "carbon-pricing-simulation-game")
@@ -17,7 +36,7 @@ The **facilitated version** uses Firebase Realtime Database to sync game state b
 5. Register the app (any nickname) — do **not** enable Firebase Hosting
 6. Copy the `firebaseConfig` object that Firebase shows you. You will need its values in step 3 below.
 
-## 2. Enable Realtime Database
+### 2. Enable Realtime Database
 
 1. In the Firebase console, go to **Build > Realtime Database**
 2. Click **Create Database**
@@ -43,9 +62,9 @@ The **facilitated version** uses Firebase Realtime Database to sync game state b
 
 **Troubleshooting `PERMISSION_DENIED` when creating a room:** Rules must allow `.write` on each of `state`, `submissions`, `debrief`, `cleantech`, and `meta` (see above). The app uses `update()` so those child rules apply; a parent-only `set()` on the whole room would also require `.write` on `$roomId` itself. Ensure `cleantech` is present if you added clean-tech claiming after an older rules deploy.
 
-## 3. Add your Firebase config
+### 3. Add your Firebase config
 
-The hosted version at `genshanahan.github.io` ships with a working Firebase config. **If you fork this repository to run your own instance**, create your own Firebase project and replace the values in `js/firebase-config.js` with your project's config. A template is provided in `js/firebase-config.example.js`.
+Copy `js/firebase-config.example.js` to `js/firebase-config.js` and replace the placeholder values with your own project's config:
 
 ```javascript
 export const FIREBASE_CONFIG = {
@@ -61,18 +80,18 @@ export const FIREBASE_CONFIG = {
 
 Firebase web API keys are designed to be public (they identify the project, not grant privileged access). Database security is enforced by the Realtime Database rules in step 2. For additional protection, you can restrict your API key to specific referrer domains in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
 
-## 4. Deploy
+### 4. Deploy
 
 The app is entirely static files — no build step, no server required. Deploy to any static hosting provider.
 
-### GitHub Pages
+#### GitHub Pages
 
 1. Push the repository to GitHub
 2. Go to **Settings > Pages** in your repository
 3. Set the source to the main branch, folder `/`
 4. Your game will be available at `https://<username>.github.io/<repo-name>/`
 
-### Local testing
+#### Local testing
 
 Run a local web server from the project root (the folder containing `index.html`):
 
@@ -82,12 +101,14 @@ python3 -m http.server 8000
 
 Then open **http://localhost:8000** in a browser. Stop the server with **Ctrl+C**.
 
+---
+
 ## Troubleshooting
 
-**Facilitator page stuck on "Loading..."**
+**Facilitator page stuck on "Loading…"**
 
-- Create the room from **Create Game Room** on the landing page each time you test; opening `host.html?room=...` manually only works if that room already exists in Firebase under `rooms/<code>/state`.
-- In the Firebase console, open **Realtime Database > Data** and confirm `rooms > <your code> > state` exists.
+- Create the room from **Create Game Room** on the landing page each time; opening `host.html?room=...` manually only works if that room already exists in Firebase under `rooms/<code>/state`.
+- If you are running a forked instance, open **Realtime Database > Data** in the Firebase console and confirm `rooms > <your code> > state` exists.
 - Confirm `js/firebase-config.js` matches your project and that database **rules** allow read/write for `rooms` (see step 2 above).
 
 ## File structure
@@ -98,11 +119,12 @@ carbon-pricing-simulation-game/
 ├── host.html               Facilitator view (projected on classroom screen)
 ├── play.html               Student view (mobile)
 ├── solo.html               Solo play against AI firms (no Firebase)
+├── privacy.html            Privacy & cookie policy
 ├── css/
 │   ├── styles.css          Shared styles
 │   └── solo.css            Solo mode layout overrides
 ├── js/
-│   ├── firebase-config.js  Firebase project config (edit this — see step 3)
+│   ├── firebase-config.js  Firebase project config (forked instances only)
 │   ├── game-engine.js      Pure game logic (no DOM, no Firebase)
 │   ├── firebase-sync.js    Firebase read/write helpers
 │   ├── ui-helpers.js       Shared formatters & rendering

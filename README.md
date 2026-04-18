@@ -40,13 +40,15 @@ By the end of the session, students will have experienced:
 
 ### Facilitated mode (classroom)
 
-The primary mode. A facilitator projects the host view on a classroom screen; students join on their phones by scanning a QR code or entering a room code. The facilitator drives the game through the five regimes, entering production decisions and processing rounds. Students see regime rules, use built-in calculators to plan strategy, and submit decisions from their devices. Real-time sync is handled by Firebase Realtime Database (free tier).
+The primary mode. A facilitator projects the host view on a classroom screen; students join on their phones by scanning a QR code or entering a room code. The facilitator drives the game through the five regimes, entering production decisions and processing rounds. Students see regime rules, use built-in calculators to plan strategy, and submit decisions from their devices. Real-time sync is handled automatically — no accounts, downloads, or technical setup required.
+
+**To run a session:** Open the [landing page](https://genshanahan.github.io/carbon-pricing-simulation-game/), click **Create Game Room**, and share the room code or QR code with students. See **[SETUP.md](SETUP.md)** for full details.
 
 **Duration:** ~90 minutes (game + debriefs), though this varies with class size and discussion depth.
 
 **Class size:** Designed for 3–8 firms of 2–3 students each. The facilitator can adjust the number of firms and rounds per regime at game creation.
 
-**Setup:** You will need a free Firebase project for multi-device sync. See **[SETUP.md](SETUP.md)** for step-by-step instructions.
+**Self-hosting:** If you want to run your own independent instance, you can fork the repository and set up your own Firebase project. See **[SETUP.md](SETUP.md)** for instructions.
 
 ### Solo mode (self-study)
 
